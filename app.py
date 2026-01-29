@@ -1,15 +1,16 @@
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify
+from flask import Flask, Response
+import json
+from collections import OrderedDict
 import os
 
 app = Flask(__name__)
 
-# Simulación de datos previos (Ya que el BCV no los da en una sola tabla)
-# En un escenario real, estos datos se guardarían en una base de datos
+# Datos previos simulados
 DATA_PREVIA = {
-    "usd": 361.4906,
-    "eur": 432.7150,
+    "usd": 361.491,
+    "eur": 432.715,
     "date": "2026-01-28"
 }
 
@@ -23,36 +24,41 @@ def home():
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Extraer precios actuales
-            dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
-            euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
-            fecha_actual = "2026-01-29" # Podrías extraerla dinámicamente o usar datetime
+            # Extraer y formatear a 3 decimales
+            dolar_actual = round(float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.')), 3)
+            euro_actual = round(float(soup.find(id="euro").find('strong').text.strip().replace(',', '.')), 3)
+            fecha_actual = "2026-01-29"
 
-            # Cálculos de porcentaje de cambio
-            change_usd = ((dolar_actual - DATA_PREVIA["usd"]) / DATA_PREVIA["usd"]) * 100
-            change_eur = ((euro_actual - DATA_PREVIA["eur"]) / DATA_PREVIA["eur"]) * 100
+            # Cálculos con 3 decimales
+            change_usd = round(((dolar_actual - DATA_PREVIA["usd"]) / DATA_PREVIA["usd"]) * 100, 3)
+            change_eur = round(((euro_actual - DATA_PREVIA["eur"]) / DATA_PREVIA["eur"]) * 100, 3)
 
-            # Estructura exacta solicitada
-            return jsonify({
-                "current": {
-                    "usd": dolar_actual,
-                    "eur": euro_actual,
-                    "date": fecha_actual
-                },
-                "previous": {
-                    "usd": DATA_PREVIA["usd"],
-                    "eur": DATA_PREVIA["eur"],
-                    "date": DATA_PREVIA["date"]
-                },
-                "changePercentage": {
-                    "usd": change_usd,
-                    "eur": change_eur
-                }
-            })
+            # Usamos OrderedDict para FORZAR el orden de las llaves
+            data = OrderedDict([
+                ("current", OrderedDict([
+                    ("usd", dolar_actual),
+                    ("eur", euro_actual),
+                    ("date", fecha_actual)
+                ])),
+                ("previous", OrderedDict([
+                    ("usd", DATA_PREVIA["usd"]),
+                    ("eur", DATA_PREVIA["eur"]),
+                    ("date", DATA_PREVIA["date"])
+                ])),
+                ("changePercentage", OrderedDict([
+                    ("usd", change_usd),
+                    ("eur", change_eur)
+                ]))
+            ])
+
+            # Generamos el JSON manualmente para asegurar que Flask no lo reordene
+            json_response = json.dumps(data)
+            return Response(json_response, mimetype='application/json')
+            
         else:
-            return jsonify({"status": "error", "message": "Error BCV"}), 500
+            return Response('{"error": "BCV no responde"}', mimetype='application/json', status=500)
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return Response(f'{{"error": "{str(e)}"}}', mimetype='application/json', status=500)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
