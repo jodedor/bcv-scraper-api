@@ -7,11 +7,11 @@ import os
 
 app = Flask(__name__)
 
-# Datos previos simulados
+# Datos previos para que el cálculo de porcentaje no dé error
 DATA_PREVIA = {
     "usd": 361.491,
     "eur": 432.715,
-    "date": "2026-01-28"
+    "date": "28-01-2026"
 }
 
 @app.route('/')
@@ -24,16 +24,18 @@ def home():
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Extraer y formatear a 3 decimales
-            dolar_actual = round(float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.')), 3)
-            euro_actual = round(float(soup.find(id="euro").find('strong').text.strip().replace(',', '.')), 3)
-            fecha_actual = "2026-01-29"
+            # Extraer y redondear
+            dolar_actual = round(float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.')), 4)
+            euro_actual = round(float(soup.find(id="euro").find('strong').text.strip().replace(',', '.')), 8)
+            
+            # Formato de fecha igual al que tu Wemos espera: DD-MM-YYYY
+            fecha_actual = "29-01-2026" 
 
-            # Cálculos con 3 decimales
-            change_usd = round(((dolar_actual - DATA_PREVIA["usd"]) / DATA_PREVIA["usd"]) * 100, 3)
-            change_eur = round(((euro_actual - DATA_PREVIA["eur"]) / DATA_PREVIA["eur"]) * 100, 3)
+            # Cálculos solicitados
+            change_usd = ((dolar_actual - DATA_PREVIA["usd"]) / DATA_PREVIA["usd"]) * 100
+            change_eur = ((euro_actual - DATA_PREVIA["eur"]) / DATA_PREVIA["eur"]) * 100
 
-            # Usamos OrderedDict para FORZAR el orden de las llaves
+            # Estructura EXACTA y ORDENADA
             data = OrderedDict([
                 ("current", OrderedDict([
                     ("usd", dolar_actual),
@@ -51,14 +53,11 @@ def home():
                 ]))
             ])
 
-            # Generamos el JSON manualmente para asegurar que Flask no lo reordene
-            json_response = json.dumps(data)
-            return Response(json_response, mimetype='application/json')
+            return Response(json.dumps(data), mimetype='application/json')
             
-        else:
-            return Response('{"error": "BCV no responde"}', mimetype='application/json', status=500)
+        return Response('{"error": "BCV fail"}', status=500, mimetype='application/json')
     except Exception as e:
-        return Response(f'{{"error": "{str(e)}"}}', mimetype='application/json', status=500)
+        return Response(f'{{"error": "{str(e)}"}}', status=500, mimetype='application/json')
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
