@@ -39,30 +39,32 @@ def get_bcv_data():
     
     try:
         response = requests.get(url, headers=headers, verify=False, timeout=10)
+        # Es importante forzar la codificación a utf-8 para leer tildes correctamente si las hubiera
+        response.encoding = 'utf-8' 
+        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
             # Extraer valores nuevos
             dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
             euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
-            # Extraer fecha del sitio
-            # 1. Intentamos buscar por la clase CSS
-            fecha_tag = soup.find(class_="date-display-single")
+            
+            # --- CORRECCIÓN DE LA EXTRACCIÓN DE FECHA ---
+            # Buscamos primero por el atributo 'property' basado en tu extracto HTML
+            fecha_tag = soup.find("span", property="dc:date")
+            
+            # Fallback: Si no encuentra por property, intenta por la clase (por si acaso)
+            if not fecha_tag:
+                fecha_tag = soup.find("span", class_="date-display-single")
 
-            if fecha_tag:
-                # 2. Intentamos sacar el atributo 'content' si existe
-                if fecha_tag.has_attr('content'):
-                    fecha_sitio = fecha_tag['content'].split('T')[0]
-                else:
-                    # 3. Si no tiene 'content', limpiamos el texto "Lunes, 02 Febrero 2026"
-                    # Esto es un respaldo por si el BCV cambia el formato
-                    fecha_sitio = fecha_tag.text.strip()
+            if fecha_tag and fecha_tag.has_attr('content'):
+                # Extrae '2026-02-02T00:00:00-04:00' y toma solo '2026-02-02'
+                fecha_sitio = fecha_tag['content'].split('T')[0]
             else:
-    # 4. Si todo falla, que ponga la fecha del sistema para no enviar vacío
-    import datetime
-    fecha_sitio = datetime.datetime.now().strftime("%Y-%m-%d")
+                # Si falla, usamos la fecha de hoy como respaldo
+                fecha_sitio = time.strftime("%Y-%m-%d")
+            # ----------------------------------------------
 
-print(f"DEBUG: Fecha extraída -> {fecha_sitio}")
             # 2. COMPARAR: ¿El precio del BCV cambió respecto a lo que tenemos en el disco?
             if dolar_actual != datos_viejos.get("usd_actual"):
                 # Si cambió, lo que antes era 'actual' ahora pasa a ser 'previo'
