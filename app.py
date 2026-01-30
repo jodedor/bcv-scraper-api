@@ -45,7 +45,14 @@ def get_bcv_data():
             # Extraer valores nuevos
             dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
             euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
-            fecha_sitio = "2026-01-30" # O extraerla del soup
+            # Extraer fecha del sitio
+            fecha_tag = soup.find("span", class_="date-display-single")
+            if fecha_tag and fecha_tag.has_attr('content'):
+            # Extrae '2026-02-02T00:00:00-04:00' y toma solo '2026-02-02'
+                 fecha_sitio = fecha_tag['content'].split('T')[0]
+            else:
+            # Si falla, usamos la fecha de hoy como respaldo
+                 fecha_sitio = time.strftime("%Y-%m-%d")
 
             # 2. COMPARAR: ¿El precio del BCV cambió respecto a lo que tenemos en el disco?
             if dolar_actual != datos_viejos.get("usd_actual"):
@@ -92,4 +99,4 @@ def home():
     return Response('{"error": "Error interno"}', status=500, mimetype='application/json')
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    app.run(host='0.0.0.0', port=10000)
