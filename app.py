@@ -66,8 +66,8 @@ def get_bcv_data():
             # ----------------------------------------------
 
             # 2. COMPARAR: ¿El precio del BCV cambió respecto a lo que tenemos en el disco?
-            if dolar_actual != datos_viejos.get("usd_actual"):
-                # Si cambió, lo que antes era 'actual' ahora pasa a ser 'previo'
+            if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
+                # Si algo cambió, actualizamos todo el registro
                 datos_para_guardar = {
                     "usd_actual": dolar_actual,
                     "eur_actual": euro_actual,
