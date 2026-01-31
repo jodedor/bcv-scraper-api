@@ -13,8 +13,9 @@ PATH_DISCO = "/data/bcv_data.json"
 
 # --- CONFIGURACIÓN TELEGRAM ---
 PATH_CONOCIDOS = "/data/conocidos.json"
-TELEGRAM_TOKEN = "TU_TOKEN_AQUI"
-TELEGRAM_CHAT_ID = "TU_CHAT_ID_AQUI"
+TELEGRAM_TOKEN = "8097155705:AAECM-VdtI98giBr1Vl2WZ6ynNKHMTkfxPw"
+TELEGRAM_CHAT_ID = "-5248292296"
+
 
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
