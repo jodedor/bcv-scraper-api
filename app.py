@@ -11,11 +11,12 @@ app = Flask(__name__)
 API_KEY_VALIDA = "ebb828bc705a3da8954f60aaf0c594fe3300fe1cdb57f9b03d8eec176889b802"
 PATH_DISCO = "/data/bcv_data.json"
 
-# --- CONFIGURACIÓN TELEGRAM ---
+# --- CONFIGURACIÓN TELEGRAM Y TIEMPO ---
 PATH_CONOCIDOS = "/data/conocidos.json"
+PATH_ULTIMO_ENVIO = "/data/ultimo_envio.txt" # Nuevo archivo para persistencia
 TELEGRAM_TOKEN = "8097155705:AAECM-VdtI98giBr1Vl2WZ6ynNKHMTkfxPw"
 TELEGRAM_CHAT_ID = "-5248292296"
-
+INTERVALO_BINANCE_MINUTOS = 90
 
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -64,6 +65,31 @@ def registrar_dispositivo_nuevo(ip, agent):
         
         msg = f"🚀 ¡Nuevo ESP32 detectado!\n📍 IP: {ip}\n🤖 Agent: {agent}"
         enviar_telegram(msg)
+
+# --- NUEVA LÓGICA DE CONTROL DE TIEMPO ---
+def debe_enviar_binance():
+    ahora = time.time() # Segundos actuales
+    if not os.path.exists(PATH_ULTIMO_ENVIO):
+        return True # Si no existe el archivo, enviamos por primera vez
+    
+    try:
+        with open(PATH_ULTIMO_ENVIO, 'r') as f:
+            ultimo_envio = float(f.read().strip())
+        
+        diferencia_minutos = (ahora - ultimo_envio) / 60
+        if diferencia_minutos >= INTERVALO_BINANCE_MINUTOS:
+            return True
+    except:
+        return True
+    
+    return False
+
+def actualizar_hora_envio():
+    try:
+        with open(PATH_ULTIMO_ENVIO, 'w') as f:
+            f.write(str(time.time()))
+    except Exception as e:
+        print(f"Error guardando hora: {e}")
 
 # --- FUNCIÓN DE LECTURA SEGURA ---
 def leer_datos_disco():
@@ -142,10 +168,14 @@ def home():
     # 1. Registro de dispositivo nuevo (si aplica)
     registrar_dispositivo_nuevo(request.remote_addr, request.headers.get('User-Agent'))
 
-    # 2. Obtener precio Binance y enviar al grupo
-    precio_binance = get_binance_p2p()
-    msg_binance = f"📊 *BINANCE P2P*\n\n💵 Precio: `{precio_binance} VES`"
-    enviar_telegram(msg_binance)
+    # 2. Obtener precio Binance y enviar al grupo (CONDICIONADO A 90 MINUTOS)
+    if debe_enviar_binance():
+        precio_binance = get_binance_p2p()
+        msg_binance = f"📊 *BINANCE P2P*\n\n💵 Precio: `{precio_binance} VES`"
+        enviar_telegram(msg_binance)
+        actualizar_hora_envio()
+    else:
+        print("⏳ Binance omitido: Aún no pasan 90 minutos desde el último envío.")
 
     # 3. Validación de Seguridad
     if request.headers.get('x-dolarvzla-key') != API_KEY_VALIDA:
