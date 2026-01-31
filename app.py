@@ -144,7 +144,7 @@ def home():
 
     # 2. Obtener precio Binance y enviar al grupo
     precio_binance = get_binance_p2p()
-    msg_binance = f"📊 *Actualización Binance*\n💰 Precio: `{precio_binance} VES`"
+    msg_binance = f"📊 *BINANCE P2P*\n\n💵 Precio: `{precio_binance} VES`"
     enviar_telegram(msg_binance)
 
     # 3. Validación de Seguridad
