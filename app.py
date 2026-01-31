@@ -11,6 +11,35 @@ app = Flask(__name__)
 API_KEY_VALIDA = "ebb828bc705a3da8954f60aaf0c594fe3300fe1cdb57f9b03d8eec176889b802"
 PATH_DISCO = "/data/bcv_data.json"
 
+# --- CONFIGURACIÓN TELEGRAM ---
+PATH_CONOCIDOS = "/data/conocidos.json"
+TELEGRAM_TOKEN = "TU_TOKEN_AQUI"
+TELEGRAM_CHAT_ID = "TU_CHAT_ID_AQUI"
+
+def enviar_telegram(mensaje):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    try:
+        requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': mensaje}, timeout=5)
+    except Exception as e:
+        print(f"Error Telegram: {e}")
+
+def registrar_dispositivo_nuevo(ip, agent):
+    conocidos = []
+    if os.path.exists(PATH_CONOCIDOS):
+        try:
+            with open(PATH_CONOCIDOS, 'r') as f:
+                conocidos = json.load(f)
+        except: conocidos = []
+    
+    if ip not in conocidos:
+        conocidos.append(ip)
+        with open(PATH_CONOCIDOS, 'w') as f:
+            json.dump(conocidos, f)
+        
+        msg = f"🚀 ¡Nuevo ESP32 detectado!\n📍 IP: {ip}\n🤖 Agent: {agent}"
+        enviar_telegram(msg)
+# ------------------------------
+
 # --- FUNCIÓN DE LECTURA SEGURA ---
 def leer_datos_disco():
     try:
@@ -20,7 +49,6 @@ def leer_datos_disco():
     except Exception as e:
         print(f"Error leyendo disco: {e}")
     
-    # Si el archivo no existe o está mal, devolvemos un backup para que no de Error 502
     return {
         "usd_actual": 361.4906, 
         "eur_actual": 432.7151, 
@@ -31,43 +59,29 @@ def leer_datos_disco():
     }
 
 def get_bcv_data():
-    # 1. Leer lo que tenemos guardado
     datos_viejos = leer_datos_disco()
-    
     url = "https://www.bcv.org.ve/"
     headers = {'User-Agent': 'Mozilla/5.0'}
     
     try:
         response = requests.get(url, headers=headers, verify=False, timeout=10)
-        # Es importante forzar la codificación a utf-8 para leer tildes correctamente si las hubiera
         response.encoding = 'utf-8' 
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Extraer valores nuevos
             dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
             euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
             
-            # --- CORRECCIÓN DE LA EXTRACCIÓN DE FECHA ---
-            # Buscamos primero por el atributo 'property' basado en tu extracto HTML
             fecha_tag = soup.find("span", property="dc:date")
-            
-            # Fallback: Si no encuentra por property, intenta por la clase (por si acaso)
             if not fecha_tag:
                 fecha_tag = soup.find("span", class_="date-display-single")
 
             if fecha_tag and fecha_tag.has_attr('content'):
-                # Extrae '2026-02-02T00:00:00-04:00' y toma solo '2026-02-02'
                 fecha_sitio = fecha_tag['content'].split('T')[0]
             else:
-                # Si falla, usamos la fecha de hoy como respaldo
                 fecha_sitio = time.strftime("%Y-%m-%d")
-            # ----------------------------------------------
 
-            # 2. COMPARAR: ¿El precio del BCV cambió respecto a lo que tenemos en el disco?
             if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
-                # Si algo cambió, actualizamos todo el registro
                 datos_para_guardar = {
                     "usd_actual": dolar_actual,
                     "eur_actual": euro_actual,
@@ -82,13 +96,11 @@ def get_bcv_data():
             else:
                 datos_finales = datos_viejos
 
-            # 3. CALCULAR PORCENTAJES
             u_ant = datos_finales["usd_previo"]
             e_ant = datos_finales["eur_previo"]
             change_usd = ((datos_finales["usd_actual"] - u_ant) / u_ant) * 100
             change_eur = ((datos_finales["eur_actual"] - e_ant) / e_ant) * 100
 
-            # 4. RESPUESTA FORMATEADA PARA EL ESP32
             return OrderedDict([
                 ("current", {"usd": datos_finales["usd_actual"], "eur": datos_finales["eur_actual"], "date": datos_finales["fecha_actual"]}),
                 ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
@@ -100,9 +112,11 @@ def get_bcv_data():
 
 @app.route('/')
 def home():
-    # Esta línea imprimirá en los logs de Render quién está llamando
     print(f"--- NUEVA SOLICITUD --- Agent: {request.headers.get('User-Agent')} | IP: {request.remote_addr}")
-    # Validación de Key
+    
+    # Lógica de Telegram: Solo avisa si la IP no está en conocidos.json
+    registrar_dispositivo_nuevo(request.remote_addr, request.headers.get('User-Agent'))
+
     if request.headers.get('x-dolarvzla-key') != API_KEY_VALIDA:
         return Response('{"error": "No autorizado"}', status=401, mimetype='application/json')
 
