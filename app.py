@@ -100,6 +100,8 @@ def get_bcv_data():
 
 @app.route('/')
 def home():
+    # Esta línea imprimirá en los logs de Render quién está llamando
+    print(f"--- NUEVA SOLICITUD --- Agent: {request.headers.get('User-Agent')} | IP: {request.remote_addr}")
     # Validación de Key
     if request.headers.get('x-dolarvzla-key') != API_KEY_VALIDA:
         return Response('{"error": "No autorizado"}', status=401, mimetype='application/json')
