@@ -15,7 +15,7 @@ PATH_DISCO = "/data/bcv_data.json"
 PATH_CONOCIDOS = "/data/conocidos.json"
 PATH_ULTIMO_ENVIO = "/data/ultimo_envio.txt" # Nuevo archivo para persistencia
 TELEGRAM_TOKEN = "8097155705:AAECM-VdtI98giBr1Vl2WZ6ynNKHMTkfxPw"
-TELEGRAM_CHAT_ID = "-5248292296"
+TELEGRAM_CHAT_ID = "-1005248292296"
 INTERVALO_BINANCE_MINUTOS = 90
 
 def enviar_telegram(mensaje):
