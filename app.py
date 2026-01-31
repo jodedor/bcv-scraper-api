@@ -20,9 +20,34 @@ TELEGRAM_CHAT_ID = "-5248292296"
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': mensaje}, timeout=5)
+        requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': mensaje, 'parse_mode': 'Markdown'}, timeout=5)
     except Exception as e:
         print(f"Error Telegram: {e}")
+
+def get_binance_p2p():
+    url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "asset": "USDT",
+        "fiat": "VES",
+        "merchantCheck": False,
+        "page": 1,
+        "rows": 1,
+        "tradeType": "BUY",
+        "publisherType": None,
+        "transAmount": "500"
+    }
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=5)
+        datos = r.json()
+        if datos.get('success') and len(datos['data']) > 0:
+            return datos['data'][0]['adv']['price']
+    except:
+        return "N/A"
+    return "N/A"
 
 def registrar_dispositivo_nuevo(ip, agent):
     conocidos = []
@@ -39,7 +64,6 @@ def registrar_dispositivo_nuevo(ip, agent):
         
         msg = f"🚀 ¡Nuevo ESP32 detectado!\n📍 IP: {ip}\n🤖 Agent: {agent}"
         enviar_telegram(msg)
-# ------------------------------
 
 # --- FUNCIÓN DE LECTURA SEGURA ---
 def leer_datos_disco():
@@ -115,12 +139,19 @@ def get_bcv_data():
 def home():
     print(f"--- NUEVA SOLICITUD --- Agent: {request.headers.get('User-Agent')} | IP: {request.remote_addr}")
     
-    # Lógica de Telegram: Solo avisa si la IP no está en conocidos.json
+    # 1. Registro de dispositivo nuevo (si aplica)
     registrar_dispositivo_nuevo(request.remote_addr, request.headers.get('User-Agent'))
 
+    # 2. Obtener precio Binance y enviar al grupo
+    precio_binance = get_binance_p2p()
+    msg_binance = f"📊 *Actualización Binance*\n💰 Precio: `{precio_binance} VES`"
+    enviar_telegram(msg_binance)
+
+    # 3. Validación de Seguridad
     if request.headers.get('x-dolarvzla-key') != API_KEY_VALIDA:
         return Response('{"error": "No autorizado"}', status=401, mimetype='application/json')
 
+    # 4. Respuesta original al ESP32
     data = get_bcv_data()
     if data:
         return Response(json.dumps(data), mimetype='application/json')
