@@ -13,7 +13,7 @@ PATH_DISCO = "/data/bcv_data.json"
 
 # --- CONFIGURACIÓN TELEGRAM Y TIEMPO ---
 PATH_CONOCIDOS = "/data/conocidos.json"
-PATH_ULTIMO_ENVIO = "/data/ultimo_envio.txt" # Nuevo archivo para persistencia
+PATH_ULTIMO_ENVIO = "/data/ultimo_envio.txt" # Archivo para persistencia del tiempo
 TELEGRAM_TOKEN = "8097155705:AAECM-VdtI98giBr1Vl2WZ6ynNKHMTkfxPw"
 TELEGRAM_CHAT_ID = "-5248292296"
 INTERVALO_BINANCE_MINUTOS = 90
@@ -66,7 +66,7 @@ def registrar_dispositivo_nuevo(ip, agent):
         msg = f"🚀 ¡Nuevo ESP32 detectado!\n📍 IP: {ip}\n🤖 Agent: {agent}"
         enviar_telegram(msg)
 
-# --- NUEVA LÓGICA DE CONTROL DE TIEMPO ---
+# --- LÓGICA DE CONTROL DE TIEMPO ---
 def debe_enviar_binance():
     ahora = time.time() # Segundos actuales
     if not os.path.exists(PATH_ULTIMO_ENVIO):
@@ -163,6 +163,9 @@ def get_bcv_data():
 
 @app.route('/')
 def home():
+    # --- NOTIFICACIÓN DE CONSULTA RECIBIDA ---
+    enviar_telegram(f"📡 *Consulta del ESP32*\n📍 IP: `{request.remote_addr}`")
+
     print(f"--- NUEVA SOLICITUD --- Agent: {request.headers.get('User-Agent')} | IP: {request.remote_addr}")
     
     # 1. Registro de dispositivo nuevo (si aplica)
