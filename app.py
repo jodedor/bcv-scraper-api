@@ -10,32 +10,48 @@ from collections import OrderedDict
 
 app = Flask(__name__)
 
-# --- CONFIGURACIÓN ORIGINAL ---
-API_KEY_VALIDA = "ebb828bc705a3da8954f60aaf0c594fe3300fe1cdb57f9b03d8eec176889b802"
+# --- CONFIGURACIÓN ---
 PATH_DISCO = "/data/bcv_data.json"
 PATH_CONOCIDOS = "/data/conocidos.json"
 PATH_ULTIMO_ENVIO = "/data/ultimo_envio.txt"
+PATH_DB_LLAVES = "/data/db_llaves.json"
+
 TELEGRAM_TOKEN = "8097155705:AAECM-VdtI98giBr1Vl2WZ6ynNKHMTkfxPw"
 TELEGRAM_CHAT_ID = "-5248292296"
 INTERVALO_BINANCE_MINUTOS = 90
 
-# --- NUEVA CONFIGURACIÓN ADMINISTRATIVA ---
-PATH_DB_LLAVES = "/data/db_llaves.json"
+# --- FUNCIONES DE GESTIÓN DE LLAVES ---
 
-# --- FUNCIONES DE BASE DE DATOS ADMINISTRATIVA ---
 def cargar_db_llaves():
+    # Si no existe, creamos la estructura base
     if not os.path.exists(PATH_DB_LLAVES):
-        return {"llaves": {}}
-    try:
-        with open(PATH_DB_LLAVES, "r") as f:
-            return json.load(f)
-    except: return {"llaves": {}}
+        db = {"llaves": {}}
+    else:
+        try:
+            with open(PATH_DB_LLAVES, "r") as f:
+                db = json.load(f)
+        except:
+            db = {"llaves": {}}
+    
+    # AUTO-INYECCIÓN DE LLAVE MAESTRA (Asegura que siempre aparezca en el panel)
+    maestra = "ebb828bc705a3da8954f60aaf0c594fe3300fe1cdb57f9b03d8eec176889b802"
+    if maestra not in db["llaves"]:
+        db["llaves"][maestra] = {
+            "cliente": "SISTEMA (LLAVE MAESTRA)",
+            "estado": "activa",
+            "fecha": "2026-01-01 00:00:00"
+        }
+        with open(PATH_DB_LLAVES, "w") as f:
+            json.dump(db, f, indent=4)
+            
+    return db
 
 def guardar_db_llaves(db):
     with open(PATH_DB_LLAVES, "w") as f:
         json.dump(db, f, indent=4)
 
-# --- FUNCIONES ORIGINALES (SIN CAMBIOS) ---
+# --- FUNCIONES ORIGINALES (BCV Y TELEGRAM) ---
+
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
@@ -110,7 +126,7 @@ def get_bcv_data():
             ])
     except: return None
 
-# --- RUTAS ADMINISTRATIVAS (NUEVAS) ---
+# --- PANEL ADMINISTRATIVO ---
 
 HTML_PANEL = """
 <!DOCTYPE html>
@@ -214,19 +230,34 @@ def eliminar(key):
         guardar_db_llaves(db)
     return redirect('/admin')
 
-# --- RUTA PRINCIPAL (ORIGINAL CON NOTIFICACIÓN) ---
+# --- RUTA PRINCIPAL (CON VALIDACIÓN DINÁMICA) ---
+
 @app.route('/')
 def home():
-    enviar_telegram(f"📡 *Consulta del ESP32*\n📍 IP: `{request.remote_addr}`")
+    # Extraer la llave que envía el ESP32
+    api_key_recibida = request.headers.get('x-dolarvzla-key')
+    
+    # Cargar base de datos de llaves
+    db = cargar_db_llaves()
+    
+    # VALIDACIÓN DINÁMICA:
+    # 1. ¿La llave existe en nuestro JSON?
+    # 2. ¿Su estado es 'activa'?
+    if api_key_recibida not in db["llaves"] or db["llaves"][api_key_recibida]["estado"] != "activa":
+        print(f"🚫 Acceso Denegado: {api_key_recibida} | IP: {request.remote_addr}")
+        return Response('{"error": "No autorizado o llave bloqueada"}', status=401, mimetype='application/json')
+
+    # Si pasa la validación, obtenemos el nombre para el log/telegram
+    nombre_cliente = db["llaves"][api_key_recibida]["cliente"]
+
+    # Notificaciones y registros
+    enviar_telegram(f"📡 *Consulta autorizada*\n👤 Cliente: `{nombre_cliente}`\n📍 IP: `{request.remote_addr}`")
     registrar_dispositivo_nuevo(request.remote_addr, request.headers.get('User-Agent'))
 
     if debe_enviar_binance():
         precio = get_binance_p2p()
         enviar_telegram(f"📊 *BINANCE P2P*\n\n💵 Precio: `{precio} VES`")
         actualizar_hora_envio()
-
-    if request.headers.get('x-dolarvzla-key') != API_KEY_VALIDA:
-        return Response('{"error": "No autorizado"}', status=401, mimetype='application/json')
 
     data = get_bcv_data()
     return Response(json.dumps(data), mimetype='application/json') if data else Response('{"error": "Error"}', status=500, mimetype='application/json')
