@@ -136,6 +136,10 @@ HTML_PANEL = """
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f0f2f5; }
         .container { max-width: 1300px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        /* Ajuste para el título y el botón de backup alineados */
+        .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
         table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: auto; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
         th { background: #007bff; color: white; white-space: nowrap; }
@@ -148,6 +152,7 @@ HTML_PANEL = """
         .btn-status { background: #ffc107; color: black; }
         .btn-del { background: #dc3545; }
         .btn-copy { background: #6c757d; margin-left: 5px; font-size: 11px; }
+        .btn-backup { background: #343a40; } /* Estilo del nuevo botón */
         
         code { 
             background: #f8f9fa; 
@@ -163,7 +168,6 @@ HTML_PANEL = """
         .status-bloqueada { color: red; font-weight: bold; }
         input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
         
-        /* Tooltip simple para avisar que se copió */
         .copy-notif { font-size: 10px; color: #28a745; display: none; margin-left: 5px; }
     </style>
     <script>
@@ -178,7 +182,11 @@ HTML_PANEL = """
 </head>
 <body>
     <div class="container">
-        <h2>🛠️ Gestión de API Keys para Letreros</h2>
+        <div class="header-area">
+            <h2 style="margin:0;">🛠️ Gestión de API Keys para Letreros</h2>
+            <a href="/descargar_backup" class="btn btn-backup">💾 Descargar Backup JSON</a>
+        </div>
+
         <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <strong>Nuevo Cliente:</strong> 
             <input type="text" name="cliente" placeholder="Nombre o Ubicación" required style="width: 300px;">
@@ -298,5 +306,16 @@ def home():
     data = get_bcv_data()
     return Response(json.dumps(data), mimetype='application/json') if data else Response('{"error": "Error"}', status=500, mimetype='application/json')
 
+@app.route('/descargar_backup')
+def descargar_backup():
+    db = cargar_db_llaves()
+    fecha_str = datetime.now().strftime("%Y-%m-%d")
+    nombre_archivo = f"respaldo_llaves_{fecha_str}.json"
+    
+    return Response(
+        json.dumps(db, indent=4),
+        mimetype='application/json',
+        headers={"Content-disposition": f"attachment; filename={nombre_archivo}"}
+    )
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
