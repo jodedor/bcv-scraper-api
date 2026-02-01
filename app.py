@@ -126,7 +126,7 @@ def get_bcv_data():
             ])
     except: return None
 
-# --- PANEL ADMINISTRATIVO (ESTILOS ACTUALIZADOS) ---
+# --- PANEL ADMINISTRATIVO CON BOTÓN DE COPIAR ---
 
 HTML_PANEL = """
 <!DOCTYPE html>
@@ -135,35 +135,46 @@ HTML_PANEL = """
     <title>Panel Control Letreros</title>
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f0f2f5; }
-        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { max-width: 1300px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: auto; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
         th { background: #007bff; color: white; white-space: nowrap; }
         
-        /* Ajuste específico para la celda de la API Key */
-        .col-key { width: 60%; white-space: nowrap; }
+        .col-key { width: 50%; }
         
         .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; }
         .btn-add { background: #28a745; padding: 10px 20px; font-size: 15px; }
         .btn-edit { background: #17a2b8; }
         .btn-status { background: #ffc107; color: black; }
         .btn-del { background: #dc3545; }
+        .btn-copy { background: #6c757d; margin-left: 5px; font-size: 11px; }
         
         code { 
             background: #f8f9fa; 
-            padding: 3px 6px; 
+            padding: 5px 8px; 
             border-radius: 4px; 
             font-size: 13px; 
             color: #e83e8c; 
             font-family: 'Courier New', monospace;
             border: 1px solid #ddd;
-            display: inline-block;
         }
         
         .status-activa { color: green; font-weight: bold; }
         .status-bloqueada { color: red; font-weight: bold; }
         input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        
+        /* Tooltip simple para avisar que se copió */
+        .copy-notif { font-size: 10px; color: #28a745; display: none; margin-left: 5px; }
     </style>
+    <script>
+        function copiarAlPortapapeles(texto, btnId) {
+            navigator.clipboard.writeText(texto).then(function() {
+                var aviso = document.getElementById('aviso-' + btnId);
+                aviso.style.display = 'inline';
+                setTimeout(function() { aviso.style.display = 'none'; }, 2000);
+            });
+        }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -192,7 +203,11 @@ HTML_PANEL = """
                             <button class="btn btn-edit">OK</button>
                         </form>
                     </td>
-                    <td class="col-key"><code>{{ key }}</code></td>
+                    <td class="col-key">
+                        <code>{{ key }}</code>
+                        <button class="btn btn-copy" onclick="copiarAlPortapapeles('{{ key }}', '{{ loop.index }}')">Copiar</button>
+                        <span id="aviso-{{ loop.index }}" class="copy-notif">¡Copiado!</span>
+                    </td>
                     <td class="status-{{ info.estado }}">{{ info.estado.upper() }}</td>
                     <td style="white-space: nowrap;">
                         <form action="/cambiar_estado/{{ key }}" method="post" style="display:inline;">
