@@ -137,8 +137,8 @@ HTML_PANEL = """
         body { font-family: sans-serif; margin: 20px; background: #f0f2f5; }
         .container { max-width: 1300px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         
-        /* Ajuste para el título y el botón de backup alineados */
         .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header-actions { display: flex; gap: 10px; align-items: center; }
         
         table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: auto; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
@@ -146,13 +146,14 @@ HTML_PANEL = """
         
         .col-key { width: 50%; }
         
-        .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; }
+        .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; font-family: sans-serif; }
         .btn-add { background: #28a745; padding: 10px 20px; font-size: 15px; }
         .btn-edit { background: #17a2b8; }
         .btn-status { background: #ffc107; color: black; }
         .btn-del { background: #dc3545; }
         .btn-copy { background: #6c757d; margin-left: 5px; font-size: 11px; }
-        .btn-backup { background: #343a40; } /* Estilo del nuevo botón */
+        .btn-backup { background: #343a40; }
+        .btn-import { background: #6f42c1; } /* Color morado para diferenciar */
         
         code { 
             background: #f8f9fa; 
@@ -169,6 +170,9 @@ HTML_PANEL = """
         input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
         
         .copy-notif { font-size: 10px; color: #28a745; display: none; margin-left: 5px; }
+        
+        /* Estilo para el input de archivo oculto */
+        .import-form { display: inline-flex; align-items: center; gap: 5px; background: #f1f1f1; padding: 5px; border-radius: 4px; border: 1px dashed #ccc; }
     </style>
     <script>
         function copiarAlPortapapeles(texto, btnId) {
@@ -184,7 +188,13 @@ HTML_PANEL = """
     <div class="container">
         <div class="header-area">
             <h2 style="margin:0;">🛠️ Gestión de API Keys para Letreros</h2>
-            <a href="/descargar_backup" class="btn btn-backup">💾 Descargar Backup JSON</a>
+            <div class="header-actions">
+                <form action="/importar_backup" method="post" enctype="multipart/form-data" class="import-form">
+                    <input type="file" name="archivo_json" accept=".json" required style="font-size: 11px; width: 150px;">
+                    <button type="submit" class="btn btn-import">📥 Importar</button>
+                </form>
+                <a href="/descargar_backup" class="btn btn-backup">💾 Descargar Backup</a>
+            </div>
         </div>
 
         <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
@@ -317,5 +327,28 @@ def descargar_backup():
         mimetype='application/json',
         headers={"Content-disposition": f"attachment; filename={nombre_archivo}"}
     )
+
+@app.route('/importar_backup', methods=['POST'])
+def importar_backup():
+    if 'archivo_json' not in request.files:
+        return redirect('/admin')
+    
+    archivo = request.files['archivo_json']
+    if archivo.filename == '':
+        return redirect('/admin')
+
+    if archivo:
+        try:
+            contenido = json.load(archivo)
+            # Verificación básica de estructura
+            if "llaves" in contenido:
+                guardar_db_llaves(contenido)
+        except Exception as e:
+            print(f"Error al importar: {e}")
+            
+    return redirect('/admin')
+
+
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
