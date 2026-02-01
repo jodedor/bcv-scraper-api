@@ -126,7 +126,7 @@ def get_bcv_data():
             ])
     except: return None
 
-# --- PANEL ADMINISTRATIVO ---
+# --- PANEL ADMINISTRATIVO (ESTILOS ACTUALIZADOS) ---
 
 HTML_PANEL = """
 <!DOCTYPE html>
@@ -135,55 +135,76 @@ HTML_PANEL = """
     <title>Panel Control Letreros</title>
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f0f2f5; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: auto; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
-        th { background: #007bff; color: white; }
+        th { background: #007bff; color: white; white-space: nowrap; }
+        
+        /* Ajuste específico para la celda de la API Key */
+        .col-key { width: 60%; white-space: nowrap; }
+        
         .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; }
         .btn-add { background: #28a745; padding: 10px 20px; font-size: 15px; }
         .btn-edit { background: #17a2b8; }
         .btn-status { background: #ffc107; color: black; }
         .btn-del { background: #dc3545; }
-        code { background: #f8f9fa; padding: 4px; border-radius: 4px; font-size: 14px; color: #e83e8c; word-break: break-all; border: 1px solid #ddd; }
+        
+        code { 
+            background: #f8f9fa; 
+            padding: 3px 6px; 
+            border-radius: 4px; 
+            font-size: 13px; 
+            color: #e83e8c; 
+            font-family: 'Courier New', monospace;
+            border: 1px solid #ddd;
+            display: inline-block;
+        }
+        
         .status-activa { color: green; font-weight: bold; }
         .status-bloqueada { color: red; font-weight: bold; }
+        input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>🛠️ Gestión de API Keys para Letreros</h2>
-        <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
-            <input type="text" name="cliente" placeholder="Nombre del Cliente / Ubicación" required style="padding: 10px; width: 300px; border: 1px solid #ccc; border-radius: 4px;">
+        <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <strong>Nuevo Cliente:</strong> 
+            <input type="text" name="cliente" placeholder="Nombre o Ubicación" required style="width: 300px;">
             <button type="submit" class="btn btn-add">Generar Nueva Clave</button>
         </form>
 
         <table>
-            <tr>
-                <th>Cliente</th>
-                <th>API Key (SHA-256)</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-            </tr>
-            {% for key, info in db.llaves.items() %}
-            <tr>
-                <td>
-                    <form action="/editar/{{ key }}" method="post" style="display:flex; gap:5px;">
-                        <input type="text" name="nuevo_nombre" value="{{ info.cliente }}" style="padding: 5px; border: 1px solid #ccc; width: 150px;">
-                        <button class="btn btn-edit">OK</button>
-                    </form>
-                </td>
-                <td><code>{{ key }}</code></td>
-                <td class="status-{{ info.estado }}">{{ info.estado.upper() }}</td>
-                <td>
-                    <form action="/cambiar_estado/{{ key }}" method="post" style="display:inline;">
-                        <button class="btn btn-status">Bloquear/Activar</button>
-                    </form>
-                    <form action="/eliminar/{{ key }}" method="post" style="display:inline;">
-                        <button class="btn btn-del" onclick="return confirm('¿Eliminar?')">X</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th class="col-key">API Key (SHA-256)</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, info in db.llaves.items() %}
+                <tr>
+                    <td>
+                        <form action="/editar/{{ key }}" method="post" style="display:flex; gap:5px;">
+                            <input type="text" name="nuevo_nombre" value="{{ info.cliente }}" style="width: 140px;">
+                            <button class="btn btn-edit">OK</button>
+                        </form>
+                    </td>
+                    <td class="col-key"><code>{{ key }}</code></td>
+                    <td class="status-{{ info.estado }}">{{ info.estado.upper() }}</td>
+                    <td style="white-space: nowrap;">
+                        <form action="/cambiar_estado/{{ key }}" method="post" style="display:inline;">
+                            <button class="btn btn-status">Bloquear/Activar</button>
+                        </form>
+                        <form action="/eliminar/{{ key }}" method="post" style="display:inline;">
+                            <button class="btn btn-del" onclick="return confirm('¿Eliminar?')">X</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
     </div>
 </body>
