@@ -138,7 +138,7 @@ HTML_PANEL = """
         .container { max-width: 1300px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         
         .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-actions { display: flex; gap: 10px; align-items: center; }
+        .header-actions { display: flex; gap: 20px; align-items: center; }
         
         table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: auto; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
@@ -172,7 +172,9 @@ HTML_PANEL = """
         .copy-notif { font-size: 10px; color: #28a745; display: none; margin-left: 5px; }
         
         /* Estilo para el input de archivo oculto */
-        .import-form { display: inline-flex; align-items: center; gap: 5px; background: #f1f1f1; padding: 5px; border-radius: 4px; border: 1px dashed #ccc; }
+        .import-form { display: inline-flex; align-items: center; gap: 12px; background: #f8f9fa; padding: 8px 15px; border-radius: 6px; border: 1px solid #dee2e6;box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);}
+        input[type="file"] {font-size: 13px;color: #495057;cursor: pointer;}
+    
     </style>
     <script>
         function copiarAlPortapapeles(texto, btnId) {
@@ -187,15 +189,17 @@ HTML_PANEL = """
 <body>
     <div class="container">
         <div class="header-area">
-            <h2 style="margin:0;">🛠️ Gestión de API Keys para Letreros</h2>
-            <div class="header-actions">
-                <form action="/importar_backup" method="post" enctype="multipart/form-data" class="import-form">
-                    <input type="file" name="archivo_json" accept=".json" required style="font-size: 11px; width: 150px;">
-                    <button type="submit" class="btn btn-import">📥 Importar</button>
-                </form>
-                <a href="/descargar_backup" class="btn btn-backup">💾 Descargar Backup</a>
-            </div>
-        </div>
+    <h2 style="margin:0;">🛠️ Gestión de API Keys</h2>
+    <div class="header-actions">
+        <form action="/importar_backup" method="post" enctype="multipart/form-data" class="import-form">
+            <span style="font-size: 12px; font-weight: bold; color: #666;">Restaurar:</span>
+            <input type="file" name="archivo_json" accept=".json" required>
+            <button type="submit" class="btn btn-import">📥 Importar JSON</button>
+        </form>
+        
+        <a href="/descargar_backup" class="btn btn-backup">💾 Descargar Backup</a>
+    </div>
+</div>
 
         <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <strong>Nuevo Cliente:</strong> 
