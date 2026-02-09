@@ -96,13 +96,52 @@ def actualizar_hora_envio():
 def leer_datos_disco():
     if os.path.exists(PATH_DISCO):
         try:
-            with open(PATH_DISCO, 'r') as f: return json.load(f)
-        except: pass
-    return {"usd_actual": 361.4906, "eur_actual": 432.7151, "fecha_actual": "2026-01-28", "usd_previo": 361.4906, "eur_previo": 432.7151, "fecha_previa": "2026-01-28"}
+            with open(PATH_DISCO, 'r') as f: 
+                return json.load(f)
+        except: 
+            pass
+    # Si no existe el archivo, devolvemos datos iniciales
+    # IMPORTANTE: "timestamp": 0 asegura que la primera vez que corra,
+    # el código piense que el dato es viejo y vaya a buscar al BCV inmediatamente.
+    return {
+        "usd_actual": 361.4906, 
+        "eur_actual": 432.7151, 
+        "fecha_actual": "2026-01-28", 
+        "usd_previo": 361.4906, 
+        "eur_previo": 432.7151, 
+        "fecha_previa": "2026-01-28",
+        "timestamp": 0  # <--- ESTO ES LO NUEVO
+    }
 
 def get_bcv_data():
     datos_viejos = leer_datos_disco()
+    
+    # --- INICIO LÓGICA DE CACHÉ (NUEVO) ---
+    tiempo_actual = time.time()
+    ultimo_timestamp = datos_viejos.get("timestamp", 0)
+    
+    # Verificamos cuánto tiempo ha pasado (en segundos)
+    # 3600 segundos = 1 hora
+    tiempo_transcurrido = tiempo_actual - ultimo_timestamp
+    
+    # Si el dato tiene MENOS de 1 hora (3600 seg), lo devolvemos tal cual (CACHÉ)
+    if tiempo_transcurrido < 3600:
+        minutos_restantes = int((3600 - tiempo_transcurrido) / 60)
+        print(f"✅ Usando Caché. Dato vigente. Faltan {minutos_restantes} min para actualizar BCV.")
+        
+        # Devolvemos los datos viejos sin tocar el BCV
+        return OrderedDict([
+            ("current", {"usd": datos_viejos["usd_actual"], "eur": datos_viejos["eur_actual"], "date": datos_viejos["fecha_actual"]}),
+            ("previous", {"usd": datos_viejos["usd_previo"], "eur": datos_viejos["eur_previo"], "date": datos_viejos["fecha_previa"]}),
+            ("changePercentage", {"usd": round(((datos_viejos["usd_actual"] - datos_viejos["usd_previo"]) / datos_viejos["usd_previo"]) * 100, 4), "eur": round(((datos_viejos["eur_actual"] - datos_viejos["eur_previo"]) / datos_viejos["eur_previo"]) * 100, 4)})
+        ])
+    
+    # Si pasamos el IF anterior, significa que el caché es viejo. Continuamos a Scrapear:
+    print(f"⏰ Caché expiró (hace {int(tiempo_transcurrido/60)} min). Consultando BCV...")
+    # --- FIN LÓGICA DE CACHÉ ---
+
     url = "https://www.bcv.org.ve/"
+    # ... el resto de tu código de scraping sigue aquí abajo ...
     try:
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=10)
         response.encoding = 'utf-8'
@@ -113,10 +152,21 @@ def get_bcv_data():
             fecha_tag = soup.find("span", property="dc:date") or soup.find("span", class_="date-display-single")
             fecha_sitio = fecha_tag['content'].split('T')[0] if fecha_tag and fecha_tag.has_attr('content') else time.strftime("%Y-%m-%d")
 
+                        # ... (código anterior de scraping) ...
+            
             if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
-                datos_finales = {"usd_actual": dolar_actual, "eur_actual": euro_actual, "fecha_actual": fecha_sitio, "usd_previo": datos_viejos.get("usd_actual"), "eur_previo": datos_viejos.get("eur_actual"), "fecha_previa": datos_viejos.get("fecha_actual")}
+                datos_finales = {
+                    "usd_actual": dolar_actual, 
+                    "eur_actual": euro_actual, 
+                    "fecha_actual": fecha_sitio, 
+                    "usd_previo": datos_viejos.get("usd_actual"), 
+                    "eur_previo": datos_viejos.get("eur_actual"), 
+                    "fecha_previa": datos_viejos.get("fecha_actual"),
+                    "timestamp": time.time() # <--- AGREGA ESTA LÍNEA AQUÍ
+                }
                 with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
-            else: datos_finales = datos_viejos
+            else: 
+                datos_finales = datos_viejos
 
             u_ant, e_ant = datos_finales["usd_previo"], datos_finales["eur_previo"]
             return OrderedDict([
