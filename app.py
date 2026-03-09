@@ -15,49 +15,49 @@ PATH_DISCO = "/data/bcv_data.json"
 PATH_CONOCIDOS = "/data/conocidos.json"
 PATH_ULTIMO_ENVIO = "/data/ultimo_envio.txt"
 PATH_DB_LLAVES = "/data/db_llaves.json"
+PATH_CONFIG = "/data/config_sistema.json" # <--- NUEVO
 
 TELEGRAM_TOKEN = "8097155705:AAECM-VdtI98giBr1Vl2WZ6ynNKHMTkfxPw"
 TELEGRAM_CHAT_ID = "-5248292296"
 INTERVALO_BINANCE_MINUTOS = 90
 
-# --- FUNCIONES DE GESTIÓN DE LLAVES ---
+# --- GESTIÓN DEL MODO EMERGENCIA ---
+def gestionar_emergencia(accion="leer"):
+    if not os.path.exists(PATH_CONFIG):
+        config = {"modo_emergencia": False}
+        with open(PATH_CONFIG, "w") as f: json.dump(config, f)
+    with open(PATH_CONFIG, "r") as f:
+        try: config = json.load(f)
+        except: config = {"modo_emergencia": False}
+    if accion == "toggle":
+        config["modo_emergencia"] = not config.get("modo_emergencia", False)
+        with open(PATH_CONFIG, "w") as f: json.dump(config, f)
+        estado = "ACTIVADO 🚨" if config["modo_emergencia"] else "DESACTIVADO ✅"
+        enviar_telegram(f"SISTEMA: Modo Emergencia {estado}")
+    return config.get("modo_emergencia", False)
 
+# --- FUNCIONES DE GESTIÓN DE LLAVES (ORIGINALES) ---
 def cargar_db_llaves():
-    # Si no existe, creamos la estructura base
     if not os.path.exists(PATH_DB_LLAVES):
         db = {"llaves": {}}
     else:
         try:
-            with open(PATH_DB_LLAVES, "r") as f:
-                db = json.load(f)
-        except:
-            db = {"llaves": {}}
-    
-    # AUTO-INYECCIÓN DE LLAVE MAESTRA (Asegura que siempre aparezca en el panel)
+            with open(PATH_DB_LLAVES, "r") as f: db = json.load(f)
+        except: db = {"llaves": {}}
     maestra = "ebb828bc705a3da8954f60aaf0c594fe3300fe1cdb57f9b03d8eec176889b802"
     if maestra not in db["llaves"]:
-        db["llaves"][maestra] = {
-            "cliente": "SISTEMA (LLAVE MAESTRA)",
-            "estado": "activa",
-            "fecha": "2026-01-01 00:00:00"
-        }
-        with open(PATH_DB_LLAVES, "w") as f:
-            json.dump(db, f, indent=4)
-            
+        db["llaves"][maestra] = {"cliente": "SISTEMA (LLAVE MAESTRA)", "estado": "activa", "fecha": "2026-01-01 00:00:00"}
+        guardar_db_llaves(db)
     return db
 
 def guardar_db_llaves(db):
-    with open(PATH_DB_LLAVES, "w") as f:
-        json.dump(db, f, indent=4)
+    with open(PATH_DB_LLAVES, "w") as f: json.dump(db, f, indent=4)
 
-# --- FUNCIONES ORIGINALES (BCV Y TELEGRAM) ---
-
+# --- FUNCIONES AUXILIARES (ORIGINALES) ---
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    try:
-        requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': mensaje, 'parse_mode': 'Markdown'}, timeout=5)
-    except Exception as e:
-        print(f"Error Telegram: {e}")
+    try: requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': mensaje, 'parse_mode': 'Markdown'}, timeout=5)
+    except Exception as e: print(f"Error Telegram: {e}")
 
 def get_binance_p2p():
     url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
@@ -66,8 +66,7 @@ def get_binance_p2p():
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=5)
         datos = r.json()
-        if datos.get('success') and len(datos['data']) > 0:
-            return datos['data'][0]['adv']['price']
+        if datos.get('success') and len(datos['data']) > 0: return datos['data'][0]['adv']['price']
     except: return "N/A"
     return "N/A"
 
@@ -96,72 +95,52 @@ def actualizar_hora_envio():
 def leer_datos_disco():
     if os.path.exists(PATH_DISCO):
         try:
-            with open(PATH_DISCO, 'r') as f: 
-                return json.load(f)
-        except: 
-            pass
-    # Si no existe el archivo, devolvemos datos iniciales
-    # IMPORTANTE: "timestamp": 0 asegura que la primera vez que corra,
-    # el código piense que el dato es viejo y vaya a buscar al BCV inmediatamente.
-    return {
-        "usd_actual": 361.4906, 
-        "eur_actual": 432.7151, 
-        "fecha_actual": "2026-01-28", 
-        "usd_previo": 361.4906, 
-        "eur_previo": 432.7151, 
-        "fecha_previa": "2026-01-28",
-        "timestamp": 0  # <--- ESTO ES LO NUEVO
-    }
+            with open(PATH_DISCO, 'r') as f: return json.load(f)
+        except: pass
+    return {"usd_actual": 361.4906, "eur_actual": 432.7151, "fecha_actual": "2026-01-28", "usd_previo": 361.4906, "eur_previo": 432.7151, "fecha_previa": "2026-01-28", "timestamp": 0}
 
 def get_bcv_data():
     datos_viejos = leer_datos_disco()
+    
+    # --- LÓGICA DE EMERGENCIA ---
+    if gestionar_emergencia("leer"):
+        print("🚨 EMERGENCIA: Entregando datos de disco.")
+        return OrderedDict([
+            ("current", {"usd": datos_viejos["usd_actual"], "eur": datos_viejos["eur_actual"], "date": datos_viejos["fecha_actual"]}),
+            ("previous", {"usd": datos_viejos["usd_previo"], "eur": datos_viejos["eur_previo"], "date": datos_viejos["fecha_previa"]}),
+            ("changePercentage", {"usd": 0.0, "eur": 0.0})
+        ])
+
+    # --- LÓGICA DE CACHÉ ---
     tiempo_actual = time.time()
     ultimo_timestamp = datos_viejos.get("timestamp", 0)
-    tiempo_transcurrido = tiempo_actual - ultimo_timestamp
-    
-    # 1. Si el caché tiene menos de 1 hora, entregarlo de una vez
-    if tiempo_transcurrido < 3600:
-        print(f"✅ Usando Caché. Dato vigente.")
+    if (tiempo_actual - ultimo_timestamp) < 3600:
         return OrderedDict([
             ("current", {"usd": datos_viejos["usd_actual"], "eur": datos_viejos["eur_actual"], "date": datos_viejos["fecha_actual"]}),
             ("previous", {"usd": datos_viejos["usd_previo"], "eur": datos_viejos["eur_previo"], "date": datos_viejos["fecha_previa"]}),
             ("changePercentage", {"usd": round(((datos_viejos["usd_actual"] - datos_viejos["usd_previo"]) / datos_viejos["usd_previo"]) * 100, 4), "eur": round(((datos_viejos["eur_actual"] - datos_viejos["eur_previo"]) / datos_viejos["eur_previo"]) * 100, 4)})
         ])
     
-    # 2. Si el caché expiró, intentamos scrapear el BCV
-    print(f"⏰ Caché expiró. Consultando BCV...")
+    # --- SCRAPING ORIGINAL ---
     url = "https://www.bcv.org.ve/"
-    
     try:
-        # Intentamos la conexión (ignora errores de certificado y espera máximo 10 seg)
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=10)
         response.encoding = 'utf-8'
-        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
             euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
-            
             fecha_tag = soup.find("span", property="dc:date") or soup.find("span", class_="date-display-single")
             fecha_sitio = fecha_tag['content'].split('T')[0] if fecha_tag and fecha_tag.has_attr('content') else time.strftime("%Y-%m-%d")
 
-            # Si el precio cambió, actualizamos el archivo en disco
             if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
                 datos_finales = {
-                    "usd_actual": dolar_actual, 
-                    "eur_actual": euro_actual, 
-                    "fecha_actual": fecha_sitio, 
-                    "usd_previo": datos_viejos.get("usd_actual"), 
-                    "eur_previo": datos_viejos.get("eur_actual"), 
-                    "fecha_previa": datos_viejos.get("fecha_actual"),
-                    "timestamp": time.time()
+                    "usd_actual": dolar_actual, "eur_actual": euro_actual, "fecha_actual": fecha_sitio, 
+                    "usd_previo": datos_viejos.get("usd_actual"), "eur_previo": datos_viejos.get("eur_actual"), 
+                    "fecha_previa": datos_viejos.get("fecha_actual"), "timestamp": time.time()
                 }
                 with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
-            else: 
-                datos_finales = datos_viejos
-                # Actualizamos el timestamp aunque el precio sea igual para no reintentar cada segundo si el BCV está OK
-                datos_finales["timestamp"] = time.time()
-                with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
+            else: datos_finales = datos_viejos
 
             u_ant, e_ant = datos_finales["usd_previo"], datos_finales["eur_previo"]
             return OrderedDict([
@@ -169,27 +148,9 @@ def get_bcv_data():
                 ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
                 ("changePercentage", {"usd": round(((datos_finales["usd_actual"] - u_ant) / u_ant) * 100, 4), "eur": round(((datos_finales["eur_actual"] - e_ant) / e_ant) * 100, 4)})
             ])
+    except: return None
 
-    except Exception as e:
-        # --- ESTA ES LA MAGIA ---
-        # Si el BCV falla (timeout, 500, vacío, etc.), NO devolvemos None.
-        # Devolvemos los datos que ya tenemos en disco para que el ESP32 no falle.
-        print(f"⚠️ ERROR CRÍTICO BCV: {e}. Entregando última tasa conocida de emergencia.")
-        enviar_telegram(f"⚠️ *Aviso Sistema*: El BCV no responde. Usando datos locales para evitar caída de clientes.")
-        
-        u_act, e_act = datos_viejos["usd_actual"], datos_viejos["eur_actual"]
-        u_ant, e_ant = datos_viejos["usd_previo"], datos_viejos["eur_previo"]
-        
-        return OrderedDict([
-            ("current", {"usd": u_act, "eur": e_act, "date": datos_viejos["fecha_actual"]}),
-            ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_viejos["fecha_previa"]}),
-            ("changePercentage", {"usd": round(((u_act - u_ant) / u_ant) * 100, 4), "eur": round(((e_act - e_ant) / e_ant) * 100, 4)})
-        ])
-
-    return None # Solo llegaría aquí si no hay datos ni en disco ni en red (poco probable)
-
-# --- PANEL ADMINISTRATIVO CON BOTÓN DE COPIAR ---
-
+# --- PANEL ADMINISTRATIVO INTEGRAL ---
 HTML_PANEL = """
 <!DOCTYPE html>
 <html>
@@ -198,45 +159,23 @@ HTML_PANEL = """
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f0f2f5; }
         .container { max-width: 1300px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        
         .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-actions { display: flex; gap: 20px; align-items: center; }
-        
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: auto; }
+        .emergencia-box { padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; border: 2px solid; }
+        .modo-on { background: #fff3f3; border-color: #dc3545; color: #dc3545; }
+        .modo-off { background: #f3fff3; border-color: #28a745; color: #28a745; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
-        th { background: #007bff; color: white; white-space: nowrap; }
-        
-        .col-key { width: 50%; }
-        
-        .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; font-family: sans-serif; }
-        .btn-add { background: #28a745; padding: 10px 20px; font-size: 15px; }
-        .btn-edit { background: #17a2b8; }
+        th { background: #007bff; color: white; }
+        .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; }
+        .btn-panic { background: #dc3545; font-size: 16px; font-weight: bold; }
+        .btn-ok-emerg { background: #28a745; font-size: 16px; font-weight: bold; }
+        .btn-add { background: #28a745; padding: 10px 20px; }
         .btn-status { background: #ffc107; color: black; }
-        .btn-del { background: #dc3545; }
-        .btn-copy { background: #6c757d; margin-left: 5px; font-size: 11px; }
+        .btn-copy { background: #6c757d; font-size: 11px; }
         .btn-backup { background: #343a40; }
-        .btn-import { background: #6f42c1; } /* Color morado para diferenciar */
-        
-        code { 
-            background: #f8f9fa; 
-            padding: 5px 8px; 
-            border-radius: 4px; 
-            font-size: 13px; 
-            color: #e83e8c; 
-            font-family: 'Courier New', monospace;
-            border: 1px solid #ddd;
-        }
-        
-        .status-activa { color: green; font-weight: bold; }
-        .status-bloqueada { color: red; font-weight: bold; }
-        input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        
-        .copy-notif { font-size: 10px; color: #28a745; display: none; margin-left: 5px; }
-        
-        /* Estilo para el input de archivo oculto */
-        .import-form { display: inline-flex; align-items: center; gap: 12px; background: #f8f9fa; padding: 8px 15px; border-radius: 6px; border: 1px solid #dee2e6;box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);}
-        input[type="file"] {font-size: 13px;color: #495057;cursor: pointer;}
-    
+        .btn-import { background: #6f42c1; }
+        code { background: #f8f9fa; padding: 4px; border-radius: 4px; color: #e83e8c; border: 1px solid #ddd; }
+        .copy-notif { font-size: 10px; color: #28a745; display: none; }
     </style>
     <script>
         function copiarAlPortapapeles(texto, btnId) {
@@ -251,55 +190,54 @@ HTML_PANEL = """
 <body>
     <div class="container">
         <div class="header-area">
-    <h2 style="margin:0;">🛠️ Gestión de API Keys</h2>
-    <div class="header-actions">
-        <form action="/importar_backup" method="post" enctype="multipart/form-data" class="import-form">
-            <span style="font-size: 12px; font-weight: bold; color: #666;">Restaurar:</span>
-            <input type="file" name="archivo_json" accept=".json" required>
-            <button type="submit" class="btn btn-import">📥 Importar JSON</button>
-        </form>
-        
-        <a href="/descargar_backup" class="btn btn-backup">💾 Descargar Backup</a>
-    </div>
-</div>
+            <h2 style="margin:0;">🛠️ Gestión de API Keys e Infraestructura</h2>
+            <div style="display: flex; gap: 10px;">
+                <form action="/importar_backup" method="post" enctype="multipart/form-data" style="display:flex; align-items:center; gap:5px; background:#eee; padding:5px; border-radius:5px;">
+                    <input type="file" name="archivo_json" accept=".json" required style="font-size:10px;">
+                    <button type="submit" class="btn btn-import">📥 Importar</button>
+                </form>
+                <a href="/descargar_backup" class="btn btn-backup">💾 Backup</a>
+            </div>
+        </div>
+
+        <div class="emergencia-box {{ 'modo-on' if emergencia else 'modo-off' }}">
+            <div>
+                <h3 style="margin:0;">🚨 MODO DE EMERGENCIA (BCV CAÍDO)</h3>
+                <p style="margin:5px 0 0 0;">Estado: <strong>{{ 'ACTIVADO' if emergencia else 'DESACTIVADO' }}</strong></p>
+            </div>
+            <form action="/toggle_emergencia" method="post">
+                <button type="submit" class="btn {{ 'btn-ok-emerg' if emergencia else 'btn-panic' }}">
+                    {{ '✅ NORMALIZAR' if emergencia else '🔥 ACTIVAR EMERGENCIA' }}
+                </button>
+            </form>
+        </div>
 
         <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <strong>Nuevo Cliente:</strong> 
-            <input type="text" name="cliente" placeholder="Nombre o Ubicación" required style="width: 300px;">
-            <button type="submit" class="btn btn-add">Generar Nueva Clave</button>
+            <input type="text" name="cliente" placeholder="Nombre" required style="width:250px;">
+            <button type="submit" class="btn btn-add">Generar Clave</button>
         </form>
 
         <table>
-            <thead>
-                <tr>
-                    <th>Cliente</th>
-                    <th class="col-key">API Key (SHA-256)</th>
-                    <th>Estado</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
+            <thead><tr><th>Cliente</th><th>API Key</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
                 {% for key, info in db.llaves.items() %}
                 <tr>
                     <td>
                         <form action="/editar/{{ key }}" method="post" style="display:flex; gap:5px;">
-                            <input type="text" name="nuevo_nombre" value="{{ info.cliente }}" style="width: 140px;">
-                            <button class="btn btn-edit">OK</button>
+                            <input type="text" name="nuevo_nombre" value="{{ info.cliente }}" style="width:120px;">
+                            <button class="btn" style="background:#17a2b8;">OK</button>
                         </form>
                     </td>
-                    <td class="col-key">
-                        <code>{{ key }}</code>
+                    <td>
+                        <code>{{ key[:15] }}...</code>
                         <button class="btn btn-copy" onclick="copiarAlPortapapeles('{{ key }}', '{{ loop.index }}')">Copiar</button>
-                        <span id="aviso-{{ loop.index }}" class="copy-notif">¡Copiado!</span>
+                        <span id="aviso-{{ loop.index }}" class="copy-notif">¡Listo!</span>
                     </td>
-                    <td class="status-{{ info.estado }}">{{ info.estado.upper() }}</td>
-                    <td style="white-space: nowrap;">
-                        <form action="/cambiar_estado/{{ key }}" method="post" style="display:inline;">
-                            <button class="btn btn-status">Bloquear/Activar</button>
-                        </form>
-                        <form action="/eliminar/{{ key }}" method="post" style="display:inline;">
-                            <button class="btn btn-del" onclick="return confirm('¿Eliminar?')">X</button>
-                        </form>
+                    <td style="color: {{ 'green' if info.estado == 'activa' else 'red' }}; font-weight:bold;">{{ info.estado.upper() }}</td>
+                    <td>
+                        <form action="/cambiar_estado/{{ key }}" method="post" style="display:inline;"><button class="btn btn-status">Status</button></form>
+                        <form action="/eliminar/{{ key }}" method="post" style="display:inline;"><button class="btn" style="background:#dc3545;" onclick="return confirm('¿Eliminar?')">X</button></form>
                     </td>
                 </tr>
                 {% endfor %}
@@ -310,10 +248,17 @@ HTML_PANEL = """
 </html>
 """
 
+# --- RUTAS DE CONTROL (ORIGINALES + NUEVAS) ---
 @app.route('/admin')
 def admin():
     db = cargar_db_llaves()
-    return render_template_string(HTML_PANEL, db=db)
+    emergencia = gestionar_emergencia("leer")
+    return render_template_string(HTML_PANEL, db=db, emergencia=emergencia)
+
+@app.route('/toggle_emergencia', methods=['POST'])
+def toggle_emergencia():
+    gestionar_emergencia("toggle")
+    return redirect('/admin')
 
 @app.route('/crear', methods=['POST'])
 def crear():
@@ -326,10 +271,10 @@ def crear():
 
 @app.route('/editar/<key>', methods=['POST'])
 def editar(key):
-    nuevo_nombre = request.form.get('nuevo_nombre')
+    nuevo = request.form.get('nuevo_nombre')
     db = cargar_db_llaves()
     if key in db["llaves"]:
-        db["llaves"][key]["cliente"] = nuevo_nombre
+        db["llaves"][key]["cliente"] = nuevo
         guardar_db_llaves(db)
     return redirect('/admin')
 
@@ -337,8 +282,7 @@ def editar(key):
 def cambiar_estado(key):
     db = cargar_db_llaves()
     if key in db["llaves"]:
-        actual = db["llaves"][key]["estado"]
-        db["llaves"][key]["estado"] = "bloqueada" if actual == "activa" else "activa"
+        db["llaves"][key]["estado"] = "bloqueada" if db["llaves"][key]["estado"] == "activa" else "activa"
         guardar_db_llaves(db)
     return redirect('/admin')
 
@@ -350,28 +294,32 @@ def eliminar(key):
         guardar_db_llaves(db)
     return redirect('/admin')
 
-# --- RUTA PRINCIPAL (CON VALIDACIÓN DINÁMICA) ---
+@app.route('/descargar_backup')
+def descargar_backup():
+    db = cargar_db_llaves()
+    return Response(json.dumps(db, indent=4), mimetype='application/json', headers={"Content-disposition": "attachment; filename=backup_llaves.json"})
 
+@app.route('/importar_backup', methods=['POST'])
+def importar_backup():
+    if 'archivo_json' in request.files:
+        archivo = request.files['archivo_json']
+        if archivo:
+            try:
+                contenido = json.load(archivo)
+                if "llaves" in contenido: guardar_db_llaves(contenido)
+            except: pass
+    return redirect('/admin')
+
+# --- RUTA PRINCIPAL ---
 @app.route('/')
 def home():
-    # Extraer la llave que envía el ESP32
     api_key_recibida = request.headers.get('x-dolarvzla-key')
-    
-    # Cargar base de datos de llaves
     db = cargar_db_llaves()
-    
-    # VALIDACIÓN DINÁMICA:
-    # 1. ¿La llave existe en nuestro JSON?
-    # 2. ¿Su estado es 'activa'?
     if api_key_recibida not in db["llaves"] or db["llaves"][api_key_recibida]["estado"] != "activa":
-        print(f"🚫 Acceso Denegado: {api_key_recibida} | IP: {request.remote_addr}")
-        return Response('{"error": "No autorizado o llave bloqueada"}', status=401, mimetype='application/json')
+        return Response('{"error": "No autorizado"}', status=401, mimetype='application/json')
 
-    # Si pasa la validación, obtenemos el nombre para el log/telegram
     nombre_cliente = db["llaves"][api_key_recibida]["cliente"]
-
-    # Notificaciones y registros
-    enviar_telegram(f"📡 *Consulta autorizada*\n👤 Cliente: `{nombre_cliente}`\n📍 IP: `{request.remote_addr}`")
+    enviar_telegram(f"📡 *Consulta*\n👤: `{nombre_cliente}`\n📍 IP: `{request.remote_addr}`")
     registrar_dispositivo_nuevo(request.remote_addr, request.headers.get('User-Agent'))
 
     if debe_enviar_binance():
@@ -381,40 +329,6 @@ def home():
 
     data = get_bcv_data()
     return Response(json.dumps(data), mimetype='application/json') if data else Response('{"error": "Error"}', status=500, mimetype='application/json')
-
-@app.route('/descargar_backup')
-def descargar_backup():
-    db = cargar_db_llaves()
-    fecha_str = datetime.now().strftime("%Y-%m-%d")
-    nombre_archivo = f"respaldo_llaves_{fecha_str}.json"
-    
-    return Response(
-        json.dumps(db, indent=4),
-        mimetype='application/json',
-        headers={"Content-disposition": f"attachment; filename={nombre_archivo}"}
-    )
-
-@app.route('/importar_backup', methods=['POST'])
-def importar_backup():
-    if 'archivo_json' not in request.files:
-        return redirect('/admin')
-    
-    archivo = request.files['archivo_json']
-    if archivo.filename == '':
-        return redirect('/admin')
-
-    if archivo:
-        try:
-            contenido = json.load(archivo)
-            # Verificación básica de estructura
-            if "llaves" in contenido:
-                guardar_db_llaves(contenido)
-        except Exception as e:
-            print(f"Error al importar: {e}")
-            
-    return redirect('/admin')
-
-
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
