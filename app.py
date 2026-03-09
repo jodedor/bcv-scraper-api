@@ -115,45 +115,37 @@ def leer_datos_disco():
 
 def get_bcv_data():
     datos_viejos = leer_datos_disco()
-    
-    # --- INICIO LÓGICA DE CACHÉ (NUEVO) ---
     tiempo_actual = time.time()
     ultimo_timestamp = datos_viejos.get("timestamp", 0)
-    
-    # Verificamos cuánto tiempo ha pasado (en segundos)
-    # 3600 segundos = 1 hora
     tiempo_transcurrido = tiempo_actual - ultimo_timestamp
     
-    # Si el dato tiene MENOS de 1 hora (3600 seg), lo devolvemos tal cual (CACHÉ)
+    # 1. Si el caché tiene menos de 1 hora, entregarlo de una vez
     if tiempo_transcurrido < 3600:
-        minutos_restantes = int((3600 - tiempo_transcurrido) / 60)
-        print(f"✅ Usando Caché. Dato vigente. Faltan {minutos_restantes} min para actualizar BCV.")
-        
-        # Devolvemos los datos viejos sin tocar el BCV
+        print(f"✅ Usando Caché. Dato vigente.")
         return OrderedDict([
             ("current", {"usd": datos_viejos["usd_actual"], "eur": datos_viejos["eur_actual"], "date": datos_viejos["fecha_actual"]}),
             ("previous", {"usd": datos_viejos["usd_previo"], "eur": datos_viejos["eur_previo"], "date": datos_viejos["fecha_previa"]}),
             ("changePercentage", {"usd": round(((datos_viejos["usd_actual"] - datos_viejos["usd_previo"]) / datos_viejos["usd_previo"]) * 100, 4), "eur": round(((datos_viejos["eur_actual"] - datos_viejos["eur_previo"]) / datos_viejos["eur_previo"]) * 100, 4)})
         ])
     
-    # Si pasamos el IF anterior, significa que el caché es viejo. Continuamos a Scrapear:
-    print(f"⏰ Caché expiró (hace {int(tiempo_transcurrido/60)} min). Consultando BCV...")
-    # --- FIN LÓGICA DE CACHÉ ---
-
+    # 2. Si el caché expiró, intentamos scrapear el BCV
+    print(f"⏰ Caché expiró. Consultando BCV...")
     url = "https://www.bcv.org.ve/"
-    # ... el resto de tu código de scraping sigue aquí abajo ...
+    
     try:
+        # Intentamos la conexión (ignora errores de certificado y espera máximo 10 seg)
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=10)
         response.encoding = 'utf-8'
+        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
             euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
+            
             fecha_tag = soup.find("span", property="dc:date") or soup.find("span", class_="date-display-single")
             fecha_sitio = fecha_tag['content'].split('T')[0] if fecha_tag and fecha_tag.has_attr('content') else time.strftime("%Y-%m-%d")
 
-                        # ... (código anterior de scraping) ...
-            
+            # Si el precio cambió, actualizamos el archivo en disco
             if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
                 datos_finales = {
                     "usd_actual": dolar_actual, 
@@ -162,11 +154,14 @@ def get_bcv_data():
                     "usd_previo": datos_viejos.get("usd_actual"), 
                     "eur_previo": datos_viejos.get("eur_actual"), 
                     "fecha_previa": datos_viejos.get("fecha_actual"),
-                    "timestamp": time.time() # <--- AGREGA ESTA LÍNEA AQUÍ
+                    "timestamp": time.time()
                 }
                 with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
             else: 
                 datos_finales = datos_viejos
+                # Actualizamos el timestamp aunque el precio sea igual para no reintentar cada segundo si el BCV está OK
+                datos_finales["timestamp"] = time.time()
+                with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
 
             u_ant, e_ant = datos_finales["usd_previo"], datos_finales["eur_previo"]
             return OrderedDict([
@@ -174,7 +169,24 @@ def get_bcv_data():
                 ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
                 ("changePercentage", {"usd": round(((datos_finales["usd_actual"] - u_ant) / u_ant) * 100, 4), "eur": round(((datos_finales["eur_actual"] - e_ant) / e_ant) * 100, 4)})
             ])
-    except: return None
+
+    except Exception as e:
+        # --- ESTA ES LA MAGIA ---
+        # Si el BCV falla (timeout, 500, vacío, etc.), NO devolvemos None.
+        # Devolvemos los datos que ya tenemos en disco para que el ESP32 no falle.
+        print(f"⚠️ ERROR CRÍTICO BCV: {e}. Entregando última tasa conocida de emergencia.")
+        enviar_telegram(f"⚠️ *Aviso Sistema*: El BCV no responde. Usando datos locales para evitar caída de clientes.")
+        
+        u_act, e_act = datos_viejos["usd_actual"], datos_viejos["eur_actual"]
+        u_ant, e_ant = datos_viejos["usd_previo"], datos_viejos["eur_previo"]
+        
+        return OrderedDict([
+            ("current", {"usd": u_act, "eur": e_act, "date": datos_viejos["fecha_actual"]}),
+            ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_viejos["fecha_previa"]}),
+            ("changePercentage", {"usd": round(((u_act - u_ant) / u_ant) * 100, 4), "eur": round(((e_act - e_ant) / e_ant) * 100, 4)})
+        ])
+
+    return None # Solo llegaría aquí si no hay datos ni en disco ni en red (poco probable)
 
 # --- PANEL ADMINISTRATIVO CON BOTÓN DE COPIAR ---
 
