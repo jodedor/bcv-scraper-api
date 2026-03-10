@@ -101,7 +101,7 @@ def leer_datos_disco():
 
 def get_bcv_data():
     datos_viejos = leer_datos_disco()
-   
+    
     # --- LÓGICA DE EMERGENCIA ---
     if gestionar_emergencia("leer"):
         print("🚨 EMERGENCIA: Entregando datos de disco.")
@@ -110,68 +110,74 @@ def get_bcv_data():
             ("previous", {"usd": datos_viejos["usd_previo"], "eur": datos_viejos["eur_previo"], "date": datos_viejos["fecha_previa"]}),
             ("changePercentage", {"usd": 0.0, "eur": 0.0})
         ])
-    
+
     # --- LÓGICA DE CACHÉ ---
     tiempo_actual = time.time()
     ultimo_timestamp = datos_viejos.get("timestamp", 0)
     if (tiempo_actual - ultimo_timestamp) < 3600:
+        u_act, u_prev = datos_viejos["usd_actual"], datos_viejos["usd_previo"]
+        e_act, e_prev = datos_viejos["eur_actual"], datos_viejos["eur_previo"]
         return OrderedDict([
-            ("current", {"usd": datos_viejos["usd_actual"], "eur": datos_viejos["eur_actual"], "date": datos_viejos["fecha_actual"]}),
-            ("previous", {"usd": datos_viejos["usd_previo"], "eur": datos_viejos["eur_previo"], "date": datos_viejos["fecha_previa"]}),
-            ("changePercentage", {"usd": round(((datos_viejos["usd_actual"] - datos_viejos["usd_previo"]) / datos_viejos["usd_previo"]) * 100, 4), "eur": round(((datos_viejos["eur_actual"] - datos_viejos["eur_previo"]) / datos_viejos["eur_previo"]) * 100, 4)})
+            ("current", {"usd": u_act, "eur": e_act, "date": datos_viejos["fecha_actual"]}),
+            ("previous", {"usd": u_prev, "eur": e_prev, "date": datos_viejos["fecha_previa"]}),
+            ("changePercentage", {
+                "usd": round(((u_act - u_prev) / u_prev * 100), 4) if u_prev != 0 else 0,
+                "eur": round(((e_act - e_prev) / e_prev * 100), 4) if e_prev != 0 else 0
+            })
         ])
-   
-    # --- SCRAPING ACTUALIZADO (marzo 2026) ---
+    
+    # --- SCRAPING ACTUALIZADO AL NUEVO HTML ---
     url = "https://www.bcv.org.ve/"
     try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=10)
         response.encoding = 'utf-8'
-        if response.status_code != 200:
-            raise Exception("Status no OK")
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Buscar por texto (más estable)
-        usd_text = soup.find(string=lambda t: t and "USD" in t)
-        eur_text = soup.find(string=lambda t: t and "EUR" in t)
         
-        if not usd_text or not eur_text:
-            raise Exception("No se encontraron USD/EUR")
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Captura de USD y EUR usando los IDs específicos
+            dolar_container = soup.find(id="dolar")
+            dolar_actual = float(dolar_container.find('strong').text.strip().replace(',', '.'))
+            
+            euro_container = soup.find(id="euro")
+            euro_actual = float(euro_container.find('strong').text.strip().replace(',', '.'))
+            
+            # Captura de fecha desde el atributo 'content' (ISO: 2026-03-10)
+            fecha_tag = soup.find("span", class_="date-display-single")
+            if fecha_tag and fecha_tag.has_attr('content'):
+                fecha_sitio = fecha_tag['content'].split('T')[0]
+            else:
+                fecha_sitio = time.strftime("%Y-%m-%d")
 
-        dolar_actual = float(usd_text.find_next('strong').text.strip().replace(',', '.'))
-        euro_actual = float(eur_text.find_next('strong').text.strip().replace(',', '.'))
+            # Solo actualizamos si la fecha es nueva para evitar rotación incorrecta
+            if fecha_sitio > datos_viejos.get("fecha_actual", ""):
+                datos_finales = {
+                    "usd_actual": dolar_actual, 
+                    "eur_actual": euro_actual, 
+                    "fecha_actual": fecha_sitio, 
+                    "usd_previo": datos_viejos.get("usd_actual"), 
+                    "eur_previo": datos_viejos.get("eur_actual"), 
+                    "fecha_previa": datos_viejos.get("fecha_actual"),
+                    "timestamp": time.time()
+                }
+                with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
+            else:
+                datos_finales = datos_viejos
 
-        # Fecha más confiable
-        fecha_tag = soup.find(string=re.compile(r'Fecha Valor'))
-        if fecha_tag:
-            fecha_str = fecha_tag.split(':', 1)[1].strip()  # "Martes, 10 Marzo 2026"
-            from datetime import datetime
-            import locale
-            locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
-            fecha_sitio = datetime.strptime(fecha_str, '%A, %d %B %Y').strftime('%Y-%m-%d')
-        else:
-            fecha_sitio = time.strftime("%Y-%m-%d")
-
-        # Resto del código igual (comparación, guardar JSON, etc.)
-        if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
-            datos_finales = {
-                "usd_actual": dolar_actual, "eur_actual": euro_actual, "fecha_actual": fecha_sitio,
-                "usd_previo": datos_viejos.get("usd_actual"), "eur_previo": datos_viejos.get("eur_actual"),
-                "fecha_previa": datos_viejos.get("fecha_actual"), "timestamp": time.time()
-            }
-            with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
-        else:
-            datos_finales = datos_viejos
-
-        u_ant, e_ant = datos_finales["usd_previo"], datos_finales["eur_previo"]
-        return OrderedDict([
-            ("current", {"usd": datos_finales["usd_actual"], "eur": datos_finales["eur_actual"], "date": datos_finales["fecha_actual"]}),
-            ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
-            ("changePercentage", {"usd": round(((datos_finales["usd_actual"] - u_ant) / u_ant) * 100, 4), "eur": round(((datos_finales["eur_actual"] - e_ant) / e_ant) * 100, 4)})
-        ])
-
+            u_act, u_ant = datos_finales["usd_actual"], datos_finales["usd_previo"]
+            e_act, e_ant = datos_finales["eur_actual"], datos_finales["eur_previo"]
+            
+            # Mantenemos el OrderedDict exacto para el ESP32
+            return OrderedDict([
+                ("current", {"usd": u_act, "eur": e_act, "date": datos_finales["fecha_actual"]}),
+                ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
+                ("changePercentage", {
+                    "usd": round(((u_act - u_ant) / u_ant * 100), 4) if u_ant != 0 else 0,
+                    "eur": round(((e_act - e_ant) / e_ant * 100), 4) if e_ant != 0 else 0
+                })
+            ])
     except Exception as e:
-        print(f"Error scraping BCV: {e}")
+        print(f"Error en Scraping: {e}")
         return None
 # --- PANEL ADMINISTRATIVO INTEGRAL ---
 HTML_PANEL = """
