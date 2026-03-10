@@ -121,34 +121,53 @@ def get_bcv_data():
             ("changePercentage", {"usd": round(((datos_viejos["usd_actual"] - datos_viejos["usd_previo"]) / datos_viejos["usd_previo"]) * 100, 4), "eur": round(((datos_viejos["eur_actual"] - datos_viejos["eur_previo"]) / datos_viejos["eur_previo"]) * 100, 4)})
         ])
     
-    # --- SCRAPING ORIGINAL ---
-    url = "https://www.bcv.org.ve/"
-    try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=10)
-        response.encoding = 'utf-8'
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            dolar_actual = float(soup.find(id="dolar").find('strong').text.strip().replace(',', '.'))
-            euro_actual = float(soup.find(id="euro").find('strong').text.strip().replace(',', '.'))
-            fecha_tag = soup.find("span", property="dc:date") or soup.find("span", class_="date-display-single")
-            fecha_sitio = fecha_tag['content'].split('T')[0] if fecha_tag and fecha_tag.has_attr('content') else time.strftime("%Y-%m-%d")
+   # --- SCRAPING ACTUALIZADO (marzo 2026) ---
+url = "https://www.bcv.org.ve/"
+try:
+    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+    response.encoding = 'utf-8'
+    if response.status_code != 200:
+        raise Exception("Status no OK")
 
-            if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
-                datos_finales = {
-                    "usd_actual": dolar_actual, "eur_actual": euro_actual, "fecha_actual": fecha_sitio, 
-                    "usd_previo": datos_viejos.get("usd_actual"), "eur_previo": datos_viejos.get("eur_actual"), 
-                    "fecha_previa": datos_viejos.get("fecha_actual"), "timestamp": time.time()
-                }
-                with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
-            else: datos_finales = datos_viejos
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-            u_ant, e_ant = datos_finales["usd_previo"], datos_finales["eur_previo"]
-            return OrderedDict([
-                ("current", {"usd": datos_finales["usd_actual"], "eur": datos_finales["eur_actual"], "date": datos_finales["fecha_actual"]}),
-                ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
-                ("changePercentage", {"usd": round(((datos_finales["usd_actual"] - u_ant) / u_ant) * 100, 4), "eur": round(((datos_finales["eur_actual"] - e_ant) / e_ant) * 100, 4)})
-            ])
-    except: return None
+    # Buscar por texto (más estable)
+    usd_text = soup.find(string=lambda t: t and "USD" in t)
+    eur_text = soup.find(string=lambda t: t and "EUR" in t)
+    
+    if not usd_text or not eur_text:
+        raise Exception("No se encontraron USD/EUR")
+
+    dolar_actual = float(usd_text.find_next('strong').text.strip().replace(',', '.'))
+    euro_actual = float(eur_text.find_next('strong').text.strip().replace(',', '.'))
+
+    # Fecha más confiable
+    fecha_tag = soup.find(string=re.compile(r'Fecha Valor'))
+    if fecha_tag:
+        fecha_str = fecha_tag.split(':', 1)[1].strip()  # "Martes, 10 Marzo 2026"
+        from datetime import datetime
+        import locale
+        locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+        fecha_sitio = datetime.strptime(fecha_str, '%A, %d %B %Y').strftime('%Y-%m-%d')
+    else:
+        fecha_sitio = time.strftime("%Y-%m-%d")
+
+    # Resto del código igual (comparación, guardar JSON, etc.)
+    if dolar_actual != datos_viejos.get("usd_actual") or fecha_sitio != datos_viejos.get("fecha_actual"):
+        datos_finales = {
+            "usd_actual": dolar_actual, "eur_actual": euro_actual, "fecha_actual": fecha_sitio,
+            "usd_previo": datos_viejos.get("usd_actual"), "eur_previo": datos_viejos.get("eur_actual"),
+            "fecha_previa": datos_viejos.get("fecha_actual"), "timestamp": time.time()
+        }
+        with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
+    else:
+        datos_finales = datos_viejos
+
+    # ... (el resto del return OrderedDict sigue igual)
+
+except Exception as e:
+    print(f"Error scraping BCV: {e}")
+    return None
 
 # --- PANEL ADMINISTRATIVO INTEGRAL ---
 HTML_PANEL = """
