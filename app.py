@@ -202,6 +202,7 @@ HTML_PANEL = """
         .btn-status { background: #ffc107; color: black; }
         .btn-copy { background: #6c757d; font-size: 11px; }
         .btn-backup { background: #343a40; }
+        .btn-clear-cache { background: #fd7e14; font-weight: bold; } /* === NUEVO === */
         .btn-import { background: #6f42c1; }
         code { background: #f8f9fa; padding: 4px; border-radius: 4px; color: #e83e8c; border: 1px solid #ddd; }
         .copy-notif { font-size: 10px; color: #28a745; display: none; }
@@ -240,6 +241,18 @@ HTML_PANEL = """
                 </button>
             </form>
         </div>
+
+        <!-- === NUEVO: BOX LIMPIAR CACHÉ BCV === -->
+        <div class="emergencia-box modo-off" style="margin-bottom: 20px;">
+            <div>
+                <h3 style="margin:0;">🧹 LIMPIAR CACHÉ BCV</h3>
+                <p style="margin:5px 0 0 0;">Fuerza una nueva consulta al Banco Central en el próximo request</p>
+            </div>
+            <form action="/admin/clear-bcv-cache" method="post" onsubmit="return confirm('¿Borrar caché del BCV? El próximo request hará scraping nuevo.')">
+                <button type="submit" class="btn btn-clear-cache">🔄 Forzar Actualización</button>
+            </form>
+        </div>
+        <!-- === FIN NUEVO === -->
 
         <form action="/crear" method="post" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <strong>Nuevo Cliente:</strong> 
@@ -338,6 +351,23 @@ def importar_backup():
                 if "llaves" in contenido: guardar_db_llaves(contenido)
             except: pass
     return redirect('/admin')
+
+# --- NUEVA RUTA: Limpiar caché BCV ---
+@app.route('/admin/clear-bcv-cache', methods=['POST'])
+def clear_bcv_cache():
+    """Elimina el archivo de caché del BCV para forzar nuevo scraping"""
+    try:
+        if os.path.exists(PATH_DISCO):
+            os.remove(PATH_DISCO)
+            mensaje = "✅ Caché BCV eliminado. Próximo request hará scraping fresco."
+            enviar_telegram(f"🧹 *Cache Limpiado*\n👤: Admin\n📦 Archivo: `bcv_data.json`")
+        else:
+            mensaje = "ℹ️ El archivo de caché no existía."
+        return redirect('/admin?msg=' + mensaje)
+    except Exception as e:
+        error_msg = f"❌ Error al borrar caché: {str(e)}"
+        enviar_telegram(f"⚠️ *Error Admin*\n{error_msg}")
+        return redirect('/admin?msg=' + error_msg)
 
 # --- RUTA PRINCIPAL ---
 @app.route('/')
