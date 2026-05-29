@@ -406,6 +406,14 @@ def home():
 
     data = get_bcv_data()
     return Response(json.dumps(data), mimetype='application/json') if data else Response('{"error": "Error"}', status=500, mimetype='application/json')
+# --- CONFIGURACIÓN Y ARRANQUE DEL PLANIFICADOR (CRON) ---
+scheduler = BackgroundScheduler(timezone="America/Caracas")
 
+# Se programa para el día 1 de cada mes a las 05:00 AM hora de Venezuela
+scheduler.add_job(ejecutar_cierre_mensual, 'cron', day=1, hour=5, minute=0)
+
+# Arranca el planificador en segundo plano
+scheduler.start()
+print("📆 [CRON SYSTEM] Planificador iniciado. Próximo cierre: El día 1 del mes a las 05:00 AM (Hora Vzla).")
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
