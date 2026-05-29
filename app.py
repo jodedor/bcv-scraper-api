@@ -9,7 +9,25 @@ from datetime import datetime
 from collections import OrderedDict
 from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
-
+# --- FUNCIÓN CRON-JOB: CIERRE MENSUAL ---
+def ejecutar_cierre_mensual():
+    url_cron = "https://tunombredefinitivo.infinityfreeapp.com/cron/cron_cierre_mensual.php"
+    print(f"⏰ [CRON SYSTEM] Iniciando petición de cierre mensual a: {url_cron}")
+    try:
+        # Hacemos la petición HTTP externa
+        respuesta = requests.get(url_cron, timeout=30)
+        
+        # Registramos el resultado en la consola de Render y enviamos reporte a tu Telegram
+        if respuesta.status_code == 200:
+            print("✅ [CRON SYSTEM] Cierre mensual ejecutado con éxito en InfinityFree.")
+            enviar_telegram("📆 *SISTEMA CRON*:\nEl cierre mensual se ejecutó exitosamente en InfinityFree. 🎉")
+        else:
+            print(f"⚠️ [CRON SYSTEM] El servidor remoto respondió con código: {respuesta.status_code}")
+            enviar_telegram(f"⚠️ *SISTEMA CRON*:\nInfinityFree respondió con código `{respuesta.status_code}` al intentar el cierre mensual.")
+            
+    except Exception as e:
+        print(f"❌ [CRON SYSTEM] Error al conectar con InfinityFree: {e}")
+        enviar_telegram(f"🚨 *SISTEMA CRON*:\nError crítico al ejecutar el cierre mensual:\n`{str(e)}`")
 # --- CONFIGURACIÓN ---
 PATH_DISCO = "/data/bcv_data.json"
 PATH_CONOCIDOS = "/data/conocidos.json"
