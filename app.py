@@ -7,7 +7,7 @@ import time
 import secrets
 from datetime import datetime
 from collections import OrderedDict
-
+from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 
 # --- CONFIGURACIÓN ---
