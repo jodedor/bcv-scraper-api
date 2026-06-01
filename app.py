@@ -11,7 +11,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 # --- FUNCIÓN CRON-JOB: CIERRE MENSUAL ---
 def ejecutar_cierre_mensual():
-    url_cron = "https://tunombredefinitivo.infinityfreeapp.com/cron/cron_cierre_mensual.php"
+    url_cron = "https://tunombredefinitivo.infinityfreeapp.com/cron/cierre_mensual.php?key=M1Cl4v3S3cr3t4Mag4tr0n1c2026"
     print(f"⏰ [CRON SYSTEM] Iniciando petición de cierre mensual a: {url_cron}")
     try:
         # Hacemos la petición HTTP externa
