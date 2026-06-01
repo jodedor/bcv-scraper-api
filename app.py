@@ -410,7 +410,7 @@ def home():
 scheduler = BackgroundScheduler(timezone="America/Caracas")
 
 # Se programa para el día 1 de cada mes a las 05:00 AM hora de Venezuela
-scheduler.add_job(ejecutar_cierre_mensual, 'cron', day=1, hour=9, minute=0)
+scheduler.add_job(ejecutar_cierre_mensual, 'cron', day=1, hour=5, minute=0)
 
 # Arranca el planificador en segundo plano
 scheduler.start()
