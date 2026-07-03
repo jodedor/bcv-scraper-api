@@ -144,58 +144,97 @@ def get_bcv_data():
             })
         ])
     
-    # --- SCRAPING ACTUALIZADO AL NUEVO HTML ---
+    # --- SCRAPING ACTUALIZADO Y ROBUSTECIDO ---
     url = "https://www.bcv.org.ve/"
-    try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=10)
-        response.encoding = 'utf-8'
+    
+    # 1. Cabeceras realistas
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'es-VE,es;q=0.9,en;q=0.8',
+    }
+
+    # 2. Usar sesión para mantener cookies
+    session = requests.Session()
+    session.headers.update(headers)
+    
+    response = None
+    max_reintentos = 3
+    
+    # 3. Bucle de reintentos
+    for intento in range(1, max_reintentos + 1):
+        try:
+            # Timeout aumentado a 15 segundos
+            response = session.get(url, verify=False, timeout=15)
+            if response.status_code == 200:
+                break # ¡Éxito! Salimos del bucle
+            else:
+                print(f"⚠️ Intento {intento}: BCV respondió código {response.status_code}")
+        except Exception as e:
+            print(f"⚠️ Intento {intento}: Error de conexión - {e}")
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Captura de USD y EUR usando los IDs específicos
-            dolar_container = soup.find(id="dolar")
-            dolar_actual = float(dolar_container.find('strong').text.strip().replace(',', '.'))
-            
-            euro_container = soup.find(id="euro")
-            euro_actual = float(euro_container.find('strong').text.strip().replace(',', '.'))
-            
-            # Captura de fecha desde el atributo 'content' (ISO: 2026-03-10)
-            fecha_tag = soup.find("span", class_="date-display-single")
-            if fecha_tag and fecha_tag.has_attr('content'):
-                fecha_sitio = fecha_tag['content'].split('T')[0]
-            else:
-                fecha_sitio = time.strftime("%Y-%m-%d")
+        if intento < max_reintentos:
+            time.sleep(2) # Esperar 2 segundos antes de reintentar
 
-            # Solo actualizamos si la fecha es nueva para evitar rotación incorrecta
-            if fecha_sitio > datos_viejos.get("fecha_actual", ""):
-                datos_finales = {
-                    "usd_actual": dolar_actual, 
-                    "eur_actual": euro_actual, 
-                    "fecha_actual": fecha_sitio, 
-                    "usd_previo": datos_viejos.get("usd_actual"), 
-                    "eur_previo": datos_viejos.get("eur_actual"), 
-                    "fecha_previa": datos_viejos.get("fecha_actual"),
-                    "timestamp": time.time()
-                }
-                with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
-            else:
-                datos_finales = datos_viejos
+    # Si después de los reintentos no se pudo conectar
+    if not response or response.status_code != 200:
+        print("❌ Error crítico: El BCV no respondió tras varios intentos.")
+        # Devolvemos los datos viejos en lugar de None para que el ESP32 no se quede en blanco
+        u_act, u_prev = datos_viejos["usd_actual"], datos_viejos["usd_previo"]
+        e_act, e_prev = datos_viejos["eur_actual"], datos_viejos["eur_previo"]
+        return OrderedDict([
+            ("current", {"usd": u_act, "eur": e_act, "date": datos_viejos["fecha_actual"]}),
+            ("previous", {"usd": u_prev, "eur": e_prev, "date": datos_viejos["fecha_previa"]}),
+            ("changePercentage", {
+                "usd": round(((u_act - u_prev) / u_prev * 100), 4) if u_prev != 0 else 0,
+                "eur": round(((e_act - e_prev) / e_prev * 100), 4) if e_prev != 0 else 0
+            })
+        ])
+    
+    # Si llegamos aquí, la petición fue exitosa. Procesamos el HTML:
+    try:
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        dolar_container = soup.find(id="dolar")
+        dolar_actual = float(dolar_container.find('strong').text.strip().replace(',', '.'))
+        
+        euro_container = soup.find(id="euro")
+        euro_actual = float(euro_container.find('strong').text.strip().replace(',', '.'))
+        
+        fecha_tag = soup.find("span", class_="date-display-single")
+        if fecha_tag and fecha_tag.has_attr('content'):
+            fecha_sitio = fecha_tag['content'].split('T')[0]
+        else:
+            fecha_sitio = time.strftime("%Y-%m-%d")
 
-            u_act, u_ant = datos_finales["usd_actual"], datos_finales["usd_previo"]
-            e_act, e_ant = datos_finales["eur_actual"], datos_finales["eur_previo"]
-            
-            # Mantenemos el OrderedDict exacto para el ESP32
-            return OrderedDict([
-                ("current", {"usd": u_act, "eur": e_act, "date": datos_finales["fecha_actual"]}),
-                ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
-                ("changePercentage", {
-                    "usd": round(((u_act - u_ant) / u_ant * 100), 4) if u_ant != 0 else 0,
-                    "eur": round(((e_act - e_ant) / e_ant * 100), 4) if e_ant != 0 else 0
-                })
-            ])
+        if fecha_sitio > datos_viejos.get("fecha_actual", ""):
+            datos_finales = {
+                "usd_actual": dolar_actual, 
+                "eur_actual": euro_actual, 
+                "fecha_actual": fecha_sitio, 
+                "usd_previo": datos_viejos.get("usd_actual"), 
+                "eur_previo": datos_viejos.get("eur_actual"), 
+                "fecha_previa": datos_viejos.get("fecha_actual"),
+                "timestamp": time.time()
+            }
+            with open(PATH_DISCO, 'w') as f: json.dump(datos_finales, f)
+        else:
+            datos_finales = datos_viejos
+
+        u_act, u_ant = datos_finales["usd_actual"], datos_finales["usd_previo"]
+        e_act, e_ant = datos_finales["eur_actual"], datos_finales["eur_previo"]
+        
+        return OrderedDict([
+            ("current", {"usd": u_act, "eur": e_act, "date": datos_finales["fecha_actual"]}),
+            ("previous", {"usd": u_ant, "eur": e_ant, "date": datos_finales["fecha_previa"]}),
+            ("changePercentage", {
+                "usd": round(((u_act - u_ant) / u_ant * 100), 4) if u_ant != 0 else 0,
+                "eur": round(((e_act - e_ant) / e_ant * 100), 4) if e_ant != 0 else 0
+            })
+        ])
     except Exception as e:
-        print(f"Error en Scraping: {e}")
+        print(f"❌ Error procesando HTML del BCV: {e}")
         return None
 # --- PANEL ADMINISTRATIVO INTEGRAL ---
 HTML_PANEL = """
