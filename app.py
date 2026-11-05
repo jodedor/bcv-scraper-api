@@ -117,6 +117,12 @@ def leer_datos_disco():
         except: pass
     return {"usd_actual": 361.4906, "eur_actual": 432.7151, "fecha_actual": "2026-01-28", "usd_previo": 361.4906, "eur_previo": 432.7151, "fecha_previa": "2026-01-28", "timestamp": 0}
 
+# --- NUEVO: PARSEO DE TASAS DEL BCV (formato venezolano: 1.006,03263992) ---
+def parsear_tasa(texto):
+    """Convierte '1.006,03263992' -> 1006.03263992 y '894,88760000' -> 894.8876.
+    Primero elimina el separador de miles (.) y luego cambia la coma decimal por punto."""
+    return float(texto.strip().replace(".", "").replace(",", "."))
+
 def get_bcv_data():
     datos_viejos = leer_datos_disco()
     
@@ -196,11 +202,12 @@ def get_bcv_data():
         response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'html.parser')
         
+        # CORREGIDO: ahora soporta separador de miles (ej. 1.006,03263992)
         dolar_container = soup.find(id="dolar")
-        dolar_actual = float(dolar_container.find('strong').text.strip().replace(',', '.'))
+        dolar_actual = parsear_tasa(dolar_container.find('strong').text)
         
         euro_container = soup.find(id="euro")
-        euro_actual = float(euro_container.find('strong').text.strip().replace(',', '.'))
+        euro_actual = parsear_tasa(euro_container.find('strong').text)
         
         fecha_tag = soup.find("span", class_="date-display-single")
         if fecha_tag and fecha_tag.has_attr('content'):
@@ -235,7 +242,18 @@ def get_bcv_data():
         ])
     except Exception as e:
         print(f"❌ Error procesando HTML del BCV: {e}")
-        return None
+        # CORREGIDO: en vez de devolver None (error 500), se entregan los datos viejos y se avisa por Telegram
+        enviar_telegram(f"🚨 *BCV*: falló el parseo del HTML:\n`{str(e)}`")
+        u_act, u_prev = datos_viejos["usd_actual"], datos_viejos["usd_previo"]
+        e_act, e_prev = datos_viejos["eur_actual"], datos_viejos["eur_previo"]
+        return OrderedDict([
+            ("current", {"usd": u_act, "eur": e_act, "date": datos_viejos["fecha_actual"]}),
+            ("previous", {"usd": u_prev, "eur": e_prev, "date": datos_viejos["fecha_previa"]}),
+            ("changePercentage", {
+                "usd": round(((u_act - u_prev) / u_prev * 100), 4) if u_prev != 0 else 0,
+                "eur": round(((e_act - e_prev) / e_prev * 100), 4) if e_prev != 0 else 0
+            })
+        ])
 # --- PANEL ADMINISTRATIVO INTEGRAL ---
 HTML_PANEL = """
 <!DOCTYPE html>
